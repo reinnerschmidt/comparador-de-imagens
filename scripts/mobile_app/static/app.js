@@ -53,9 +53,15 @@ function route() {
   if (h === '/area/new')                      return renderNewArea(app);
   if ((r = m(/^\/aircraft\/(\d+)$/)))         return renderAircraftDetail(app, r[1]);
   if ((r = m(/^\/area\/(\d+)\/mask$/)))       return renderMaskEditor(app, r[1]);
-  if ((r = m(/^\/aircraft\/(\d+)\/area\/(\d+)$/))) return renderAreaDetail(app, r[2], r[1]);
-  if ((r = m(/^\/area\/(\d+)$/)))             return renderAreaDetail(app, r[1], null);
-  if ((r = m(/^\/aircraft\/(\d+)\/area\/(\d+)\/(before|after)$/))) return renderCapture(app, r[1], r[2], r[3]);
+  // Position routes (new)
+  if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)$/)))                                    return renderPositionDetail(app, r[1], r[2]);
+  if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)$/)))                       return renderAreaDetail(app, r[3], r[1], r[2]);
+  if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/(before|after)\/view$/))) return renderPhotoViewer(app, r[1], r[3], r[4], r[2]);
+  if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/(before|after)$/)))       return renderCapture(app, r[1], r[3], r[4], r[2]);
+  // Legacy routes
+  if ((r = m(/^\/aircraft\/(\d+)\/area\/(\d+)$/)))                   return renderAreaDetail(app, r[2], r[1], null);
+  if ((r = m(/^\/area\/(\d+)$/)))                                    return renderAreaDetail(app, r[1], null, null);
+  if ((r = m(/^\/aircraft\/(\d+)\/area\/(\d+)\/(before|after)$/)))   return renderCapture(app, r[1], r[2], r[3], null);
   if ((r = m(/^\/analysis\/(\d+)$/)))         return renderAnalysisResult(app, r[1]);
   if ((r = m(/^\/feedback\/(\d+)$/)))         return renderFeedback(app, r[1]);
   go('/');
@@ -94,12 +100,11 @@ async function renderHome(app) {
   if (!aircraft.length) {
     acList.innerHTML = `<p style="color:var(--muted);font-size:0.85rem">Nenhuma aeronave cadastrada.</p>`;
   } else {
-    acList.innerHTML = aircraft.map(a => `
+  acList.innerHTML = aircraft.map(a => `
       <div class="card" onclick="go('/aircraft/${a.id}')">
         <span class="card-icon">🛩️</span>
         <div class="card-body">
-          <div class="card-title">${esc(a.name)}</div>
-          <div class="card-sub">${esc(a.serial)}</div>
+          <div class="card-title">${esc(a.serial)}</div>
         </div>
         <span style="color:var(--muted);font-size:1.2rem">›</span>
       </div>`).join('');
@@ -135,11 +140,7 @@ function renderNewAircraft(app) {
     <div class="view">
       <div class="form-group">
         <label class="form-label">Número de série</label>
-        <input id="f-serial" class="form-input" placeholder="ex: PP-XYZ" autocapitalize="characters">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Apelido / modelo</label>
-        <input id="f-name" class="form-input" placeholder="ex: Cessna 172 – Hangar 3">
+        <input id="f-serial" class="form-input" placeholder="ex: 20227" autocapitalize="characters" inputmode="numeric">
       </div>
       <button class="btn btn-primary" onclick="submitAircraft()">Cadastrar</button>
     </div>`;
@@ -147,16 +148,17 @@ function renderNewAircraft(app) {
 
 async function submitAircraft() {
   const serial = document.getElementById('f-serial').value.trim();
-  const name   = document.getElementById('f-name').value.trim();
-  if (!serial || !name) { toast('Preencha todos os campos', 'err'); return; }
-  const res = await API.post('/api/aircraft', { serial, name });
-  if (res.error) { toast(res.error, 'err'); return; }
+  if (!serial) { toast('Informe o número de série', 'err'); return; }
+  const res = await API.post('/api/aircraft', { serial });
+  if (res?.error) { toast(res.error, 'err'); return; }
   go(`/aircraft/${res.id}`);
 }
 
 /* ════════════════════════════════════════════
    DETALHE DA AERONAVE — Selecionar Área (Modelo)
 ════════════════════════════════════════════ */
+const POSITIONS = ['P4', 'P3', 'P2', 'P1', 'P0', 'F30'];
+
 async function renderAircraftDetail(app, id) {
   app.innerHTML = `
     <div class="app-header">
@@ -167,33 +169,22 @@ async function renderAircraftDetail(app, id) {
       <button class="btn-icon" style="color:var(--danger)" onclick="deleteAircraft(${id})" title="Remover">🗑</button>
     </div>
     <div class="view">
-      <div class="section-label">Selecione a área para inspecionar</div>
-      <div id="areas-grid" class="cards-grid"><div class="spinner"></div></div>
+      <div class="section-label">Posições de Inspeção</div>
+      <div id="pos-grid" class="cards-grid"></div>
       <div class="btn-row" style="margin-top:24px;">
         <button class="btn btn-primary" onclick="analyzeAircraft(${id})" id="btn-analyze-aircraft">🔬 Analisar Avião</button>
-        <button class="btn btn-ghost" onclick="downloadReport(${id})" id="btn-report">📄 Relatório PDF</button>
+        <button class="btn btn-ghost" onclick="downloadReport(${id})">📄 Relatório PDF</button>
       </div>
     </div>`;
 
-  const [aircraft, areas] = await Promise.all([
-    API.get('/api/aircraft').then(list => list.find(a => a.id == id) || {}),
-    API.get(`/api/areas`),
-  ]);
-
+  const aircraft = await API.get('/api/aircraft').then(list => list.find(a => a.id == id) || {});
   document.getElementById('ac-title').textContent = aircraft.serial || '—';
-  const grid = document.getElementById('areas-grid');
 
-  if (!areas.length) {
-    grid.innerHTML = `<div class="no-mask-banner">Crie um "Modelo de Máscara" na tela inicial primeiro.</div>`;
-    return;
-  }
-
-  grid.innerHTML = areas.map(a => `
-    <div class="card" onclick="go('/aircraft/${id}/area/${a.id}')">
-      ${a.mask_thumb ? `<img class="card-thumb" src="${a.mask_thumb}">` : `<span class="card-icon">📐</span>`}
+  document.getElementById('pos-grid').innerHTML = POSITIONS.map(pos => `
+    <div class="card" onclick="go('/aircraft/${id}/pos/${pos}')">
+      <span class="card-icon" style="font-size:1.1rem;font-weight:700;color:var(--accent)">${pos}</span>
       <div class="card-body">
-        <div class="card-title">${esc(a.name)}</div>
-        <div class="card-sub">${a.mask_thumb ? '✅ Pronto' : '⚠️ Sem máscara'}</div>
+        <div class="card-title">Posição ${pos}</div>
       </div>
       <span style="color:var(--muted);font-size:1.2rem">›</span>
     </div>`).join('');
@@ -204,11 +195,10 @@ async function analyzeAircraft(id) {
   btn.disabled = true;
   btn.innerHTML = '⏳ Analisando… <small style="opacity:.7;font-size:.8rem">(pode levar até 2 min)</small>';
   try {
-    const res = await API.post(`/api/aircraft/${id}/analyze`, {}, 120000); // 2 min timeout
+    const res = await API.post(`/api/aircraft/${id}/analyze`, {}, 120000);
     const ok  = res.results?.filter(r => r.status === 'OK').length || 0;
     const tot = res.results?.length || 0;
     toast(`✅ ${ok}/${tot} áreas íntegras`, 'ok');
-    // Navega para a primeira área com dano, ou recarrega a tela do avião
     const damaged = res.results?.find(r => r.analysis_id && r.status !== 'OK');
     if (damaged) go(`/analysis/${damaged.analysis_id}`);
     else renderAircraftDetail(document.getElementById('app'), id);
@@ -218,14 +208,111 @@ async function analyzeAircraft(id) {
   }
 }
 
+/* ════════════════════════════════════════════
+   POSIÇÃO — 6 posições fixas + áreas
+════════════════════════════════════════════ */
+async function renderPositionDetail(app, aircraftId, position) {
+  const aircraft = await API.get('/api/aircraft').then(l => l.find(a => a.id == aircraftId) || {});
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/aircraft/${aircraftId}')">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
+      <h1>${esc(aircraft.serial)} | ${position}</h1>
+    </div>
+    <div class="view">
+      <div class="section-label">Selecione a área</div>
+      <div id="pos-areas" class="cards-grid"><div class="spinner"></div></div>
+      <div class="btn-row" style="margin-top:20px">
+        <button class="btn btn-primary" onclick="analyzePosition(${aircraftId},'${position}')" id="btn-analyze-pos">🔬 Analisar Posição</button>
+        <button class="btn btn-ghost" onclick="downloadReport(${aircraftId})">📄 PDF</button>
+      </div>
+    </div>`;
+
+  const [posAreas, allAreas] = await Promise.all([
+    API.get(`/api/aircraft/${aircraftId}/pos/${position}/areas`).catch(() => []),
+    API.get('/api/areas').catch(() => []),
+  ]);
+
+  const withPhotos = new Set(posAreas.map(a => a.area_id));
+  const grid = document.getElementById('pos-areas');
+  if (!allAreas.length) {
+    grid.innerHTML = `<div class="no-mask-banner">Crie modelos globais na tela inicial.</div>`;
+    return;
+  }
+  grid.innerHTML = allAreas.map(a => `
+    <div class="card" onclick="go('/aircraft/${aircraftId}/pos/${position}/area/${a.id}')">
+      ${a.mask_thumb ? `<img class="card-thumb" src="${a.mask_thumb}">` : `<span class="card-icon">📐</span>`}
+      <div class="card-body">
+        <div class="card-title">${esc(a.name)}</div>
+        <div class="card-sub">${withPhotos.has(a.id) ? '✅ Com fotos' : '📸 Sem fotos'}</div>
+      </div>
+      <span style="color:var(--muted);font-size:1.2rem">›</span>
+    </div>`).join('');
+}
+
+async function analyzePosition(aircraftId, position) {
+  const btn = document.getElementById('btn-analyze-pos');
+  btn.disabled = true;
+  btn.innerHTML = '⏳ Analisando…';
+  try {
+    const res = await API.post(`/api/aircraft/${aircraftId}/analyze`, { position }, 120000);
+    const ok  = res.results?.filter(r => r.status === 'OK').length || 0;
+    const tot = res.results?.length || 0;
+    toast(`✅ ${ok}/${tot} áreas íntegras`, 'ok');
+    const damaged = res.results?.find(r => r.analysis_id && r.status !== 'OK');
+    if (damaged) go(`/analysis/${damaged.analysis_id}`);
+    else renderPositionDetail(document.getElementById('app'), aircraftId, position);
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = '🔬 Analisar Posição';
+  }
+}
+
+/* ════════════════════════════════════════════
+   VISUALIZADOR DE FOTO
+════════════════════════════════════════════ */
+async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
+  const label = mode === 'before' ? 'ANTES' : 'DEPOIS';
+  const backUrl = position
+    ? `/aircraft/${aircraftId}/pos/${position}/area/${areaId}`
+    : `/aircraft/${aircraftId}/area/${areaId}`;
+  const retakeUrl = position
+    ? `/aircraft/${aircraftId}/pos/${position}/area/${areaId}/${mode}`
+    : `/aircraft/${aircraftId}/area/${areaId}/${mode}`;
+
+  app.innerHTML = `<div class="app-header">
+    <button class="btn-icon" onclick="go('${backUrl}')">‹</button>
+    <h1>${label}</h1>
+  </div><div class="view" style="padding:0"><div class="spinner" style="padding:40px"></div></div>`;
+
+  const posQ = position ? `?position=${position}` : '';
+  const photos = await API.get(`/api/aircraft/${aircraftId}/areas/${areaId}/photos${posQ}`).catch(() => ({}));
+  const photo = mode === 'before' ? photos.before : photos.after;
+
+  if (!photo) { go(backUrl); return; }
+
+  const ts = photo.captured_at ? new Date(photo.captured_at.replace(' ','T')+'Z').toLocaleString('pt-BR') : '';
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('${backUrl}')">‹</button>
+      <h1>${label}</h1>
+    </div>
+    <div style="background:#000;width:100%;min-height:55vh;display:flex;align-items:center;justify-content:center">
+      <img src="${photo.url}" style="max-width:100%;max-height:65vh;object-fit:contain">
+    </div>
+    <div class="view">
+      <p style="color:var(--muted);text-align:center;font-size:0.82rem;margin-bottom:16px">${ts}</p>
+      <button class="btn btn-primary" onclick="go('${retakeUrl}')"> 📷 Tirar novamente</button>
+    </div>`;
+}
+
 function downloadReport(aircraftId) {
   window.open(`/api/aircraft/${aircraftId}/report`, '_blank');
 }
 
-async function renderAreaDetail(app, templateId, aircraftId) {
-  const h = location.hash.slice(1);
+async function renderAreaDetail(app, templateId, aircraftId, position) {
   const isTemplateEdit = !aircraftId;
-
   const data = await API.get(`/api/areas/${templateId}/mask`);
   const hasMask = data.mask_points && data.mask_points.length > 1;
 
@@ -238,9 +325,7 @@ async function renderAreaDetail(app, templateId, aircraftId) {
       </div>
       <div class="view">
         <div class="section-label">Visualização do Modelo</div>
-        ${hasMask
-          ? `<div class="mask-preview"><img src="${data.mask_thumb}"><span class="mask-badge">Configurado</span></div>`
-          : `<div class="no-mask-banner">Este modelo ainda não tem uma máscara definida.</div>`}
+        ${hasMask ? `<div class="mask-preview"><img src="${data.mask_thumb}"><span class="mask-badge">Configurado</span></div>` : `<div class="no-mask-banner">Este modelo ainda não tem uma máscara definida.</div>`}
         <button class="btn btn-primary" onclick="${hasMask ? `go('/area/${templateId}/mask')` : `retakeRefPhoto(${templateId})`}">
           ${hasMask ? '✏️ Ajustar Quadrante' : '📷 Tirar Foto Base'}
         </button>
@@ -250,24 +335,32 @@ async function renderAreaDetail(app, templateId, aircraftId) {
     return;
   }
 
-  // Modo Inspeção — carrega fotos existentes
+  const posQ = position ? `?position=${position}` : '';
   const [ac, photos, analyses] = await Promise.all([
     API.get('/api/aircraft').then(list => list.find(a => a.id == aircraftId) || {}),
-    API.get(`/api/aircraft/${aircraftId}/areas/${templateId}/photos`).catch(() => ({before:null,after:null})),
-    API.get(`/api/aircraft/${aircraftId}/areas/${templateId}/analyses`).catch(() => []),
+    API.get(`/api/aircraft/${aircraftId}/areas/${templateId}/photos${posQ}`).catch(() => ({before:null,after:null})),
+    API.get(`/api/aircraft/${aircraftId}/areas/${templateId}/analyses${posQ}`).catch(() => []),
   ]);
 
   const lastAnalysis = analyses[0] || null;
+  const backUrl = position ? `/aircraft/${aircraftId}/pos/${position}` : `/aircraft/${aircraftId}`;
+
   const photoCard = (mode, photo) => {
     const label = mode === 'before' ? 'ANTES' : 'DEPOIS';
     const colorClass = mode === 'before' ? 'before' : 'after';
+    const captureUrl = position
+      ? `/aircraft/${aircraftId}/pos/${position}/area/${templateId}/${mode}`
+      : `/aircraft/${aircraftId}/area/${templateId}/${mode}`;
+    const viewUrl = position
+      ? `/aircraft/${aircraftId}/pos/${position}/area/${templateId}/${mode}/view`
+      : captureUrl;
     if (photo) {
-      return `<div class="action-card ${colorClass}" onclick="go('/aircraft/${aircraftId}/area/${templateId}/${mode}')">
+      return `<div class="action-card ${colorClass}" onclick="go('${viewUrl}')">
         <img src="${photo.url}" style="width:100%;height:100%;object-fit:cover;border-radius:12px;opacity:0.85">
         <span class="ac-label" style="position:absolute;bottom:8px;left:0;right:0;text-align:center">${label} ✅</span>
       </div>`;
     }
-    return `<div class="action-card ${colorClass}" onclick="go('/aircraft/${aircraftId}/area/${templateId}/${mode}')">
+    return `<div class="action-card ${colorClass}" onclick="go('${captureUrl}')">
       <span class="ac-icon">📸</span>
       <span class="ac-label">${label}</span>
     </div>`;
@@ -275,8 +368,8 @@ async function renderAreaDetail(app, templateId, aircraftId) {
 
   app.innerHTML = `
     <div class="app-header">
-      <button class="btn-icon" onclick="history.back()">‹</button>
-      <h1>${esc(ac.serial)}</h1>
+      <button class="btn-icon" onclick="go('${backUrl}')">‹</button>
+      <h1>${esc(ac.serial)}${position ? ' | '+position : ''}</h1>
     </div>
     <div class="view">
       <div class="section-label">Área: ${esc(data.name)}</div>
@@ -284,13 +377,11 @@ async function renderAreaDetail(app, templateId, aircraftId) {
         ${photoCard('before', photos.before)}
         ${photoCard('after', photos.after)}
       </div>
-
       ${photos.before && photos.after ? `
-        <button class="btn btn-primary" style="margin-top:16px" onclick="analyzeArea(${aircraftId},${templateId})" id="btn-analyze">
+        <button class="btn btn-primary" style="margin-top:16px" onclick="analyzeArea(${aircraftId},${templateId},'${position||''}')" id="btn-analyze">
           🔬 Analisar esta Área
         </button>` : `
         <div class="no-mask-banner" style="margin-top:12px">Bata as fotos ANTES e DEPOIS para analisar.</div>`}
-
       ${lastAnalysis ? `
         <div class="section-label" style="margin-top:20px">Última Análise</div>
         <div class="card" onclick="go('/analysis/${lastAnalysis.id}')">
@@ -304,12 +395,12 @@ async function renderAreaDetail(app, templateId, aircraftId) {
     </div>`;
 }
 
-async function analyzeArea(aircraftId, areaId) {
+async function analyzeArea(aircraftId, areaId, position) {
   const btn = document.getElementById('btn-analyze');
   btn.disabled = true;
   btn.textContent = '⏳ Analisando...';
   try {
-    const res = await API.post(`/api/aircraft/${aircraftId}/areas/${areaId}/analyze`, {});
+    const res = await API.post(`/api/aircraft/${aircraftId}/areas/${areaId}/analyze`, { position: position || null });
     toast('Análise concluída!', 'ok');
     go(`/analysis/${res.analysis_id}`);
   } catch(e) {
@@ -547,7 +638,7 @@ async function saveMask() {
 /* ════════════════════════════════════════════
    CAPTURE — Câmera ao vivo + Máscara
 ════════════════════════════════════════════ */
-async function renderCapture(app, aircraftId, areaId, mode) {
+async function renderCapture(app, aircraftId, areaId, mode, position) {
   toast(`Buscando modelo #${areaId}...`, 'ok');
   
   try {
@@ -557,6 +648,9 @@ async function renderCapture(app, aircraftId, areaId, mode) {
     ]);
 
     if (!area) throw new Error("Dados da máscara vazios");
+
+    // Store context for confirmCrop
+    window._captureCtx = { aircraftId, areaId, mode, position };
 
     app.innerHTML = `
       <div class="camera-screen">
@@ -796,12 +890,25 @@ async function confirmCrop() {
   out.getContext('2d').drawImage(_cropCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
   const dataUrl = out.toDataURL('image/jpeg', 0.92);
 
-  // Extrai aircraftId, areaId e mode do hash atual
-  const h = location.hash.slice(1);
-  const m = h.match(/\/aircraft\/(\d+)\/area\/(\d+)\/(before|after)/);
-  if (m) {
-    // Upload ao servidor
-    const [, aircraftId, areaId, mode] = m;
+  // Get context from window._captureCtx (new) or hash (legacy)
+  let aircraftId, areaId, mode, position = null;
+  const ctx = window._captureCtx;
+  if (ctx) {
+    ({ aircraftId, areaId, mode, position } = ctx);
+    window._captureCtx = null;
+  } else {
+    const h = location.hash.slice(1);
+    // Try new route: /aircraft/:id/pos/:pos/area/:aid/:mode
+    let m = h.match(/\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/(before|after)/);
+    if (m) { [, aircraftId, position, areaId, mode] = m; }
+    else {
+      // Legacy: /aircraft/:id/area/:aid/:mode
+      m = h.match(/\/aircraft\/(\d+)\/area\/(\d+)\/(before|after)/);
+      if (m) { [, aircraftId, areaId, mode] = m; }
+    }
+  }
+
+  if (aircraftId && areaId && mode) {
     const btn = document.querySelector('#crop-overlay .btn-primary');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
     try {
@@ -809,6 +916,7 @@ async function confirmCrop() {
         aircraft_id: parseInt(aircraftId),
         area_id:     parseInt(areaId),
         mode,
+        position:    position || null,
         image:       dataUrl,
       });
       toast('✅ Foto enviada!', 'ok');

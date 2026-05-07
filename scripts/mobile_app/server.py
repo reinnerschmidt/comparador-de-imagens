@@ -106,7 +106,7 @@ SCHEMA_SQLITE = """
     CREATE TABLE IF NOT EXISTS aircraft (
         id      INTEGER PRIMARY KEY AUTOINCREMENT,
         serial  TEXT NOT NULL UNIQUE,
-        name    TEXT NOT NULL,
+        name    TEXT,
         created TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS areas (
@@ -122,6 +122,7 @@ SCHEMA_SQLITE = """
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
         area_id     INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+        position    TEXT,
         mode        TEXT NOT NULL CHECK(mode IN ('before','after')),
         file_path   TEXT NOT NULL,
         captured_at TEXT DEFAULT (datetime('now'))
@@ -130,6 +131,7 @@ SCHEMA_SQLITE = """
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
         aircraft_id     INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
         area_id         INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+        position        TEXT,
         before_photo_id INTEGER REFERENCES inspection_photos(id),
         after_photo_id  INTEGER REFERENCES inspection_photos(id),
         emb_score       REAL,
@@ -155,7 +157,7 @@ SCHEMA_PG = """
     CREATE TABLE IF NOT EXISTS aircraft (
         id      SERIAL PRIMARY KEY,
         serial  TEXT NOT NULL UNIQUE,
-        name    TEXT NOT NULL,
+        name    TEXT,
         created TIMESTAMPTZ DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS areas (
@@ -171,6 +173,7 @@ SCHEMA_PG = """
         id          SERIAL PRIMARY KEY,
         aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
         area_id     INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+        position    TEXT,
         mode        TEXT NOT NULL CHECK(mode IN ('before','after')),
         file_path   TEXT NOT NULL,
         captured_at TIMESTAMPTZ DEFAULT NOW()
@@ -179,6 +182,7 @@ SCHEMA_PG = """
         id              SERIAL PRIMARY KEY,
         aircraft_id     INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
         area_id         INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+        position        TEXT,
         before_photo_id INTEGER REFERENCES inspection_photos(id),
         after_photo_id  INTEGER REFERENCES inspection_photos(id),
         emb_score       REAL,
@@ -217,6 +221,28 @@ def init_db() -> None:
             if stmt:
                 cur.execute(stmt)
 
+        # Migração: adiciona coluna position se não existir (bancos anteriores)
+        for table in ("inspection_photos", "analyses"):
+            try:
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN position TEXT")
+            except Exception:
+                conn.rollback()
+
+
+# ─── Heatmap URL helper ───────────────────────────────────────────────────────
+
+def _heatmap_url(heatmap_path: str | None) -> str | None:
+    """Normaliza path absoluto ou relativo para URL servível."""
+    if not heatmap_path:
+        return None
+    from pathlib import Path as _P
+    p = _P(heatmap_path)
+    if p.is_absolute():
+        try:
+            heatmap_path = str(p.relative_to(BASE_DIR))
+        except ValueError:
+            return None
+    return "/" + heatmap_path.replace("\\", "/")
 
 
 init_db()
@@ -256,17 +282,16 @@ def list_aircraft():
 def create_aircraft():
     data   = request.get_json(force=True)
     serial = (data.get("serial") or "").strip().upper()
-    name   = (data.get("name")   or "").strip()
-    if not serial or not name:
-        return jsonify({"error": "serial e name são obrigatórios"}), 400
+    if not serial:
+        return jsonify({"error": "Número de série é obrigatório"}), 400
     try:
         with db_conn() as conn:
             new_id = execute_returning(
                 conn,
                 f"INSERT INTO aircraft (serial, name) VALUES ({PH}, {PH})",
-                (serial, name),
+                (serial, serial),  # name = serial por padrão
             )
-        return jsonify({"id": new_id, "serial": serial, "name": name}), 201
+        return jsonify({"id": new_id, "serial": serial, "name": serial}), 201
     except Exception as e:
         if "unique" in str(e).lower():
             return jsonify({"error": "Número de série já cadastrado"}), 409
@@ -379,9 +404,11 @@ def upload_photo():
         return jsonify({"error": "Aeronave ou área não encontrada"}), 404
 
     # Salva arquivo
+    position = (data.get("position") or "").strip().upper() or None
     ts       = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     filename = f"{ts}_{mode}.jpg"
-    folder   = PHOTOS_DIR / aircraft["serial"] / area["name"]
+    sub      = f"{position}/" if position else ""
+    folder   = PHOTOS_DIR / aircraft["serial"] / sub / area["name"]
     folder.mkdir(parents=True, exist_ok=True)
     file_path = folder / filename
     file_path.write_bytes(img_bytes)
@@ -391,9 +418,9 @@ def upload_photo():
     with db_conn() as conn:
         photo_id = execute_returning(
             conn,
-            f"INSERT INTO inspection_photos (aircraft_id, area_id, mode, file_path) "
-            f"VALUES ({PH},{PH},{PH},{PH})",
-            (aircraft_id, area_id, mode, rel_path),
+            f"INSERT INTO inspection_photos (aircraft_id, area_id, position, mode, file_path) "
+            f"VALUES ({PH},{PH},{PH},{PH},{PH})",
+            (aircraft_id, area_id, position, mode, rel_path),
         )
 
     return jsonify({"id": photo_id, "file_path": rel_path, "mode": mode}), 201
@@ -402,14 +429,22 @@ def upload_photo():
 @app.route("/api/aircraft/<int:aircraft_id>/areas/<int:area_id>/photos")
 def list_photos(aircraft_id: int, area_id: int):
     """Lista as fotos BEFORE e AFTER mais recentes da área neste avião."""
+    position = request.args.get("position") or None
     with db_conn() as conn:
-        rows = fetchall(
-            conn,
-            f"SELECT id, mode, file_path, captured_at FROM inspection_photos "
-            f"WHERE aircraft_id={PH} AND area_id={PH} ORDER BY captured_at DESC",
-            (aircraft_id, area_id),
-        )
-    # Converte path para URL acessível
+        if position:
+            rows = fetchall(
+                conn,
+                f"SELECT id, mode, file_path, captured_at FROM inspection_photos "
+                f"WHERE aircraft_id={PH} AND area_id={PH} AND position={PH} ORDER BY captured_at DESC",
+                (aircraft_id, area_id, position.upper()),
+            )
+        else:
+            rows = fetchall(
+                conn,
+                f"SELECT id, mode, file_path, captured_at FROM inspection_photos "
+                f"WHERE aircraft_id={PH} AND area_id={PH} ORDER BY captured_at DESC",
+                (aircraft_id, area_id),
+            )
     result = {"before": None, "after": None, "all": []}
     for r in rows:
         url = "/" + r["file_path"].replace("\\", "/")
@@ -422,26 +457,48 @@ def list_photos(aircraft_id: int, area_id: int):
     return jsonify(result)
 
 
+@app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/areas")
+def list_position_areas(aircraft_id: int, position: str):
+    """Lista áreas com fotos nesta posição do avião."""
+    position = position.upper()
+    with db_conn() as conn:
+        rows = fetchall(
+            conn,
+            f"SELECT DISTINCT p.area_id, a.name, a.mask_thumb "
+            f"FROM inspection_photos p JOIN areas a ON a.id = p.area_id "
+            f"WHERE p.aircraft_id={PH} AND p.position={PH}",
+            (aircraft_id, position),
+        )
+    return jsonify(rows)
+
+
 # ─── Analysis ─────────────────────────────────────────────────────────────────
 
-def _run_area_analysis(aircraft_id: int, area_id: int) -> dict:
+def _run_area_analysis(aircraft_id: int, area_id: int, position: str | None = None) -> dict:
     """Executa pipeline IA para um par BEFORE/AFTER. Retorna resultado."""
     from analyzer import analyze_pair
 
     with db_conn() as conn:
+        if position:
+            pos_filter = f" AND position={PH}"
+            pos_params = (aircraft_id, area_id, position.upper())
+        else:
+            pos_filter = ""
+            pos_params = (aircraft_id, area_id)
+
         before = fetchone(
             conn,
             f"SELECT id, file_path FROM inspection_photos "
-            f"WHERE aircraft_id={PH} AND area_id={PH} AND mode='before' "
+            f"WHERE aircraft_id={PH} AND area_id={PH} AND mode='before'{pos_filter} "
             f"ORDER BY captured_at DESC LIMIT 1",
-            (aircraft_id, area_id),
+            pos_params,
         )
         after = fetchone(
             conn,
             f"SELECT id, file_path FROM inspection_photos "
-            f"WHERE aircraft_id={PH} AND area_id={PH} AND mode='after' "
+            f"WHERE aircraft_id={PH} AND area_id={PH} AND mode='after'{pos_filter} "
             f"ORDER BY captured_at DESC LIMIT 1",
-            (aircraft_id, area_id),
+            pos_params,
         )
 
     if not before:
@@ -454,37 +511,41 @@ def _run_area_analysis(aircraft_id: int, area_id: int) -> dict:
 
     result = analyze_pair(before_path, after_path, str(COMP_DIR))
 
+    # Store relative heatmap path
+    heatmap_abs = result.get("heatmap_path")
+    rel_heatmap = None
+    if heatmap_abs:
+        try:
+            rel_heatmap = str(Path(heatmap_abs).relative_to(BASE_DIR))
+        except ValueError:
+            rel_heatmap = heatmap_abs
+
     with db_conn() as conn:
         analysis_id = execute_returning(
             conn,
-            f"INSERT INTO analyses (aircraft_id, area_id, before_photo_id, after_photo_id, "
+            f"INSERT INTO analyses (aircraft_id, area_id, position, before_photo_id, after_photo_id, "
             f"emb_score, orb_score, final_score, status, heatmap_path) "
-            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
+            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
             (
-                aircraft_id, area_id,
+                aircraft_id, area_id, position,
                 before["id"], after["id"],
                 result["emb_score"], result["orb_score"], result["final_score"],
-                result["status"], result.get("heatmap_path"),
+                result["status"], rel_heatmap,
             ),
         )
     result["analysis_id"] = analysis_id
-
-    # Convert absolute heatmap path to relative for URL serving
-    heatmap_abs = result.get("heatmap_path")
-    if heatmap_abs:
-        try:
-            result["heatmap_path"] = str(Path(heatmap_abs).relative_to(BASE_DIR))
-        except ValueError:
-            pass  # already relative or outside BASE_DIR
-
+    result["heatmap_path"] = rel_heatmap
+    result["heatmap_url"]  = _heatmap_url(rel_heatmap)
     return result
 
 
 @app.route("/api/aircraft/<int:aircraft_id>/areas/<int:area_id>/analyze", methods=["POST"])
 def analyze_area(aircraft_id: int, area_id: int):
     """Dispara análise IA para uma área específica."""
+    data     = request.get_json(force=True) or {}
+    position = (data.get("position") or "").strip().upper() or None
     try:
-        result = _run_area_analysis(aircraft_id, area_id)
+        result = _run_area_analysis(aircraft_id, area_id, position)
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -495,18 +556,28 @@ def analyze_area(aircraft_id: int, area_id: int):
 @app.route("/api/aircraft/<int:aircraft_id>/analyze", methods=["POST"])
 def analyze_aircraft(aircraft_id: int):
     """Dispara análise IA para todas as áreas com BEFORE+AFTER do avião."""
+    data     = request.get_json(force=True) or {}
+    position = (data.get("position") or "").strip().upper() or None
+
     with db_conn() as conn:
-        area_ids = fetchall(
-            conn,
-            f"SELECT DISTINCT area_id FROM inspection_photos WHERE aircraft_id={PH}",
-            (aircraft_id,),
-        )
+        if position:
+            area_ids = fetchall(
+                conn,
+                f"SELECT DISTINCT area_id FROM inspection_photos WHERE aircraft_id={PH} AND position={PH}",
+                (aircraft_id, position),
+            )
+        else:
+            area_ids = fetchall(
+                conn,
+                f"SELECT DISTINCT area_id FROM inspection_photos WHERE aircraft_id={PH}",
+                (aircraft_id,),
+            )
 
     results = []
     for row in area_ids:
         aid = row["area_id"]
         try:
-            r = _run_area_analysis(aircraft_id, aid)
+            r = _run_area_analysis(aircraft_id, aid, position)
             results.append({"area_id": aid, **r})
         except ValueError as e:
             results.append({"area_id": aid, "error": str(e)})
@@ -523,25 +594,33 @@ def get_analysis(analysis_id: int):
             f"SELECT * FROM analyses WHERE id={PH}", (analysis_id,))
     if not row:
         return jsonify({"error": "Análise não encontrada"}), 404
-    if row.get("heatmap_path"):
-        row["heatmap_url"] = "/" + row["heatmap_path"].replace("\\", "/")
+    row["heatmap_url"] = _heatmap_url(row.get("heatmap_path"))
     return jsonify(row)
 
 
 @app.route("/api/aircraft/<int:aircraft_id>/areas/<int:area_id>/analyses")
 def list_area_analyses(aircraft_id: int, area_id: int):
     """Lista análises desta área, mais recente primeiro."""
+    position = request.args.get("position") or None
     with db_conn() as conn:
-        rows = fetchall(
-            conn,
-            f"SELECT id, final_score, status, heatmap_path, created_at "
-            f"FROM analyses WHERE aircraft_id={PH} AND area_id={PH} "
-            f"ORDER BY created_at DESC",
-            (aircraft_id, area_id),
-        )
+        if position:
+            rows = fetchall(
+                conn,
+                f"SELECT id, final_score, status, heatmap_path, created_at "
+                f"FROM analyses WHERE aircraft_id={PH} AND area_id={PH} AND position={PH} "
+                f"ORDER BY created_at DESC",
+                (aircraft_id, area_id, position.upper()),
+            )
+        else:
+            rows = fetchall(
+                conn,
+                f"SELECT id, final_score, status, heatmap_path, created_at "
+                f"FROM analyses WHERE aircraft_id={PH} AND area_id={PH} "
+                f"ORDER BY created_at DESC",
+                (aircraft_id, area_id),
+            )
     for r in rows:
-        if r.get("heatmap_path"):
-            r["heatmap_url"] = "/" + r["heatmap_path"].replace("\\", "/")
+        r["heatmap_url"] = _heatmap_url(r.get("heatmap_path"))
     return jsonify(rows)
 
 
