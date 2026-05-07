@@ -1,0 +1,20 @@
+# AeroInspect — Production Dependencies
+# Gerado de pyproject.toml + dependências do servidor
+
+# IA / Computer Vision
+tensorflow>=2.15
+opencv-python-headless>=4.8   # headless = sem display (Docker/Railway)
+numpy>=1.24
+scikit-image>=0.21
+scikit-learn>=1.3
+
+# Visualização / PDF
+matplotlib>=3.7
+pandas>=2.0
+
+# Web
+flask>=3.0
+gunicorn>=21.0
+
+# Database
+psycopg2-binary>=2.9   # PostgreSQL (Railway)

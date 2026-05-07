@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Anotador de Inspeção Aeronáutica</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --border:   #30363d;
+    --text:     #e6edf3;
+    --muted:    #7d8590;
+    --accent:   #58a6ff;
+    --ok:       #3fb950;
+    --danger:   #f85149;
+    --warn:     #d29922;
+    --radius:   10px;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  header h1 { font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  #progress-text { font-size: 0.82rem; color: var(--muted); }
+
+  /* ── Progress bar ── */
+  #progress-bar-wrap {
+    height: 3px; background: var(--border);
+    position: relative;
+  }
+  #progress-bar {
+    height: 100%; background: var(--accent);
+    width: 0%; transition: width .4s ease;
+  }
+
+  /* ── Main layout ── */
+  main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 20px;
+    max-width: 1300px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* ── Pair navigator ── */
+  #pair-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  #pair-nav span { font-size: 0.82rem; color: var(--muted); margin-right: 4px; }
+  .nav-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    transition: transform .15s;
+  }
+  .nav-dot:hover { transform: scale(1.3); }
+  .nav-dot.active { border-color: var(--accent); background: var(--accent); }
+  .nav-dot.ok     { background: var(--ok);     border-color: var(--ok); }
+  .nav-dot.damage { background: var(--danger); border-color: var(--danger); }
+
+  /* ── Image panel ── */
+  #images {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .img-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .img-card-header {
+    padding: 8px 14px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .img-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    min-height: 300px;
+    max-height: 480px;
+    overflow: hidden;
+  }
+  .img-wrapper img {
+    display: block;
+    max-width: 100%;
+    max-height: 480px;
+    object-fit: contain;
+    user-select: none;
+  }
+  #canvas-overlay {
+    position: absolute;
+    cursor: crosshair;
+    /* sized & positioned dynamically via JS to match rendered image area */
+  }
+
+  /* ── Controls ── */
+  #controls {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  #radius-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  #radius-row label { font-size: 0.82rem; color: var(--muted); white-space: nowrap; }
+  #radius-slider {
+    flex: 1;
+    accent-color: var(--danger);
+    cursor: pointer;
+  }
+  #radius-value {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--danger);
+    min-width: 42px;
+    text-align: right;
+  }
+  #circle-hint {
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  #action-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 8px 18px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: opacity .15s, transform .1s;
+  }
+  button:active { transform: scale(.97); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+
+  .btn-nav    { background: var(--surface); border-color: var(--border); color: var(--text); }
+  .btn-ok     { background: #1a3a25; border-color: var(--ok); color: var(--ok); }
+  .btn-damage { background: #3a1a1a; border-color: var(--danger); color: var(--danger); }
+  .btn-clear  { background: transparent; border-color: var(--border); color: var(--muted); font-size: 0.78rem; }
+  .btn-accent { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+  .btn-save   { background: #1a3a25; border-color: var(--ok); color: var(--ok); font-weight: 600; }
+
+  /* ── Bottom panel ── */
+  #bottom {
+    margin-top: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  #stats { font-size: 0.82rem; color: var(--muted); flex: 1; }
+  #stats b { color: var(--text); }
+
+  /* ── Result box ── */
+  #result-box {
+    display: none;
+    background: #0d2137;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-top: 12px;
+    font-size: 0.84rem;
+    line-height: 1.7;
+  }
+  #result-box.visible { display: block; }
+  #result-box .threshold-val {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  #result-box table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  #result-box td { padding: 3px 8px; }
+  #result-box td:first-child { color: var(--muted); }
+  #result-box td:last-child { font-weight: 600; text-align: right; }
+
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+  .tag-ok     { background: #1a3a25; color: var(--ok); }
+  .tag-damage { background: #3a1a1a; color: var(--danger); }
+  .tag-none   { background: var(--surface); color: var(--muted); border: 1px solid var(--border); }
+
+  #toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: #1a3a25; color: var(--ok);
+    border: 1px solid var(--ok);
+    padding: 10px 18px; border-radius: 8px;
+    font-size: 0.84rem; font-weight: 500;
+    opacity: 0; pointer-events: none;
+    transition: opacity .3s;
+    z-index: 999;
+  }
+  #toast.show { opacity: 1; }
+  #toast.error { background: #3a1a1a; color: var(--danger); border-color: var(--danger); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🛩️ Anotador de Inspeção Aeronáutica</h1>
+  <span id="progress-text">Carregando...</span>
+</header>
+<div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+
+<main>
+  <!-- Navegação por pontos -->
+  <div id="pair-nav">
+    <span>Pares:</span>
+  </div>
+
+  <!-- Imagens -->
+  <div id="images">
+    <div class="img-card">
+      <div class="img-card-header">
+        <span>📷 BEFORE — Referência</span>
+        <span id="filename-label" style="color:var(--text);font-size:0.8rem"></span>
+      </div>
+      <div class="img-wrapper">
+        <img id="img-before" src="" alt="before">
+      </div>
+    </div>
+
+    <div class="img-card">
+      <div class="img-card-header">
+        <span>🔍 AFTER — Inspeção</span>
+        <span id="label-badge"></span>
+      </div>
+      <div class="img-wrapper" id="after-wrapper">
+        <img id="img-after" src="" alt="after">
+        <canvas id="canvas-overlay"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controles -->
+  <div id="controls">
+    <div id="radius-row">
+      <label>🔴 Raio do círculo:</label>
+      <input type="range" id="radius-slider" min="10" max="300" value="60">
+      <span id="radius-value">60 px</span>
+    </div>
+    <div id="circle-hint">Clique na imagem AFTER para marcar o dano. Ajuste o raio com o slider.</div>
+
+    <div id="action-row">
+      <button class="btn-nav" id="btn-prev">← Anterior</button>
+      <button class="btn-ok"  id="btn-identical">✓ Idênticas (sem dano)</button>
+      <button class="btn-damage" id="btn-confirm-damage" disabled>🔴 Confirmar dano</button>
+      <button class="btn-clear"  id="btn-clear-circle">✕ Limpar círculo</button>
+      <button class="btn-nav" id="btn-next">Próximo →</button>
+    </div>
+  </div>
+
+  <!-- Painel inferior -->
+  <div id="bottom">
+    <div id="stats">Carregando estatísticas...</div>
+    <button class="btn-accent" id="btn-calibrate">📊 Recalibrar Threshold</button>
+    <button class="btn-save"   id="btn-save-config" disabled>💾 Salvar no config.py</button>
+  </div>
+
+  <!-- Resultado da calibração -->
+  <div id="result-box">
+    <div>Threshold sugerido:</div>
+    <div class="threshold-val" id="res-threshold">—</div>
+    <table>
+      <tr><td>Precision</td><td id="res-prec">—</td></tr>
+      <tr><td>Recall</td><td id="res-rec">—</td></tr>
+      <tr><td>F1</td><td id="res-f1">—</td></tr>
+      <tr><td>Average Precision (AP)</td><td id="res-ap">—</td></tr>
+      <tr><td>Pares usados</td><td id="res-n">—</td></tr>
+    </table>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let pairs       = [];
+let annotations = {};
+let currentIdx  = 0;
+let circle      = null;   // {x, y, radius} em coordenadas da imagem original
+let pendingThreshold = null;
+
+const canvas  = document.getElementById('canvas-overlay');
+const ctx     = canvas.getContext('2d');
+const imgEl   = document.getElementById('img-after');
+const slider  = document.getElementById('radius-slider');
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  const [pairsRes, annRes] = await Promise.all([
+    fetch('/api/pairs').then(r => r.json()),
+    fetch('/api/annotations').then(r => r.json()),
+  ]);
+  pairs       = pairsRes;
+  annotations = annRes;
+  buildNav();
+  goTo(0);
+}
+
+// ─── Navigation ───────────────────────────────────────────────────────────────
+function buildNav() {
+  const nav = document.getElementById('pair-nav');
+  nav.innerHTML = '<span>Pares:</span>';
+  pairs.forEach((p, i) => {
+    const dot = document.createElement('div');
+    dot.className = 'nav-dot';
+    dot.title = p.filename;
+    updateDot(dot, p.filename);
+    dot.addEventListener('click', () => goTo(i));
+    nav.appendChild(dot);
+  });
+}
+
+function updateDot(dot, filename) {
+  const ann = annotations[filename];
+  dot.classList.remove('ok', 'damage', 'active');
+  if (ann) dot.classList.add(ann.label === 0 ? 'ok' : 'damage');
+}
+
+function goTo(idx) {
+  currentIdx = Math.max(0, Math.min(idx, pairs.length - 1));
+  circle = null;
+
+  // restore saved circle if exists
+  const saved = annotations[pairs[currentIdx].filename];
+  if (saved?.circle) circle = { ...saved.circle };
+
+  renderPair();
+  updateNav();
+  updateStats();
+}
+
+function updateNav() {
+  document.querySelectorAll('.nav-dot').forEach((dot, i) => {
+    dot.classList.toggle('active', i === currentIdx);
+    updateDot(dot, pairs[i].filename);
+  });
+  document.getElementById('btn-prev').disabled = currentIdx === 0;
+  document.getElementById('btn-next').disabled = currentIdx === pairs.length - 1;
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function renderPair() {
+  const pair = pairs[currentIdx];
+  document.getElementById('filename-label').textContent = pair.filename;
+  document.getElementById('img-before').src = `/image/before/${pair.filename}`;
+  imgEl.src = `/image/after/${pair.filename}`;
+  imgEl.onload = () => { syncCanvas(); drawCircle(); };
+
+  const ann = annotations[pair.filename];
+  const badge = document.getElementById('label-badge');
+  if (!ann) {
+    badge.innerHTML = '<span class="tag tag-none">Não anotado</span>';
+  } else if (ann.label === 0) {
+    badge.innerHTML = '<span class="tag tag-ok">✓ Idênticas</span>';
+  } else {
+    badge.innerHTML = '<span class="tag tag-damage">🔴 Com dano</span>';
+  }
+
+  document.getElementById('btn-confirm-damage').disabled = !circle;
+  document.getElementById('progress-text').textContent =
+    `${currentIdx + 1} / ${pairs.length} pares`;
+}
+
+// ─── Canvas ───────────────────────────────────────────────────────────────────
+// Returns the rendered rect of the image content inside the wrapper,
+// accounting for object-fit:contain letterboxing.
+function getRenderedImageRect() {
+  const wrapperRect = imgEl.parentElement.getBoundingClientRect();
+  const natW = imgEl.naturalWidth;
+  const natH = imgEl.naturalHeight;
+  if (!natW || !natH) return { left: 0, top: 0, width: 0, height: 0 };
+
+  const wrapW = wrapperRect.width;
+  const wrapH = wrapperRect.height;
+  const scale = Math.min(wrapW / natW, wrapH / natH);
+  const rendW = natW * scale;
+  const rendH = natH * scale;
+  const offLeft = (wrapW - rendW) / 2;
+  const offTop  = (wrapH - rendH) / 2;
+
+  return { left: offLeft, top: offTop, width: rendW, height: rendH, scale };
+}
+
+function syncCanvas() {
+  const r = getRenderedImageRect();
+  canvas.width  = Math.round(r.width);
+  canvas.height = Math.round(r.height);
+  canvas.style.width  = r.width  + 'px';
+  canvas.style.height = r.height + 'px';
+  canvas.style.left   = r.left   + 'px';
+  canvas.style.top    = r.top    + 'px';
+}
+
+function drawCircle() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!circle) return;
+
+  // image-pixel → canvas-pixel (they share the same scale now)
+  const r = getRenderedImageRect();
+  const scale = r.scale || (canvas.width / imgEl.naturalWidth);
+  const cx = circle.x * scale;
+  const cy = circle.y * scale;
+  const cr = circle.radius * scale;
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(248, 81, 73, 0.20)';
+  ctx.fill();
+  ctx.strokeStyle = '#f85149';
+  ctx.lineWidth   = 2.5;
+  ctx.stroke();
+
+  // Centro
+  ctx.beginPath();
+  ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#f85149';
+  ctx.fill();
+}
+
+canvas.addEventListener('click', e => {
+  const rect  = canvas.getBoundingClientRect();
+  const canX  = e.clientX - rect.left;
+  const canY  = e.clientY - rect.top;
+  const r     = getRenderedImageRect();
+  const scale = r.scale || (imgEl.naturalWidth / canvas.width);
+
+  // canvas-pixel → image-pixel
+  circle = {
+    x:      Math.round(canX / scale),
+    y:      Math.round(canY / scale),
+    radius: parseInt(slider.value, 10),
+  };
+  drawCircle();
+  document.getElementById('btn-confirm-damage').disabled = false;
+});
+
+slider.addEventListener('input', () => {
+  document.getElementById('radius-value').textContent = slider.value + ' px';
+  if (circle) { circle.radius = parseInt(slider.value, 10); drawCircle(); }
+});
+
+window.addEventListener('resize', () => { syncCanvas(); drawCircle(); });
+
+// ─── Actions ──────────────────────────────────────────────────────────────────
+document.getElementById('btn-identical').addEventListener('click', () => saveAnnotation(0, null));
+document.getElementById('btn-confirm-damage').addEventListener('click', () => {
+  if (!circle) return toast('Clique na imagem para marcar o dano primeiro.', true);
+  saveAnnotation(1, circle);
+});
+document.getElementById('btn-clear-circle').addEventListener('click', () => {
+  circle = null;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  document.getElementById('btn-confirm-damage').disabled = true;
+});
+document.getElementById('btn-prev').addEventListener('click', () => goTo(currentIdx - 1));
+document.getElementById('btn-next').addEventListener('click', () => goTo(currentIdx + 1));
+
+async function saveAnnotation(label, circleData) {
+  const filename = pairs[currentIdx].filename;
+  const res = await fetch('/api/annotate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, label, circle: circleData }),
+  });
+  if (!res.ok) { toast('Erro ao salvar anotação', true); return; }
+
+  annotations[filename] = { label, circle: circleData };
+  toast(label === 0 ? '✓ Marcado como idênticas' : '🔴 Dano confirmado');
+  renderPair();
+  updateNav();
+  updateStats();
+
+  // Avança automaticamente se não for o último
+  if (currentIdx < pairs.length - 1) setTimeout(() => goTo(currentIdx + 1), 500);
+}
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+function updateStats() {
+  const total    = pairs.length;
+  const annotated = Object.keys(annotations).length;
+  const damaged  = Object.values(annotations).filter(a => a.label === 1).length;
+  const ok       = Object.values(annotations).filter(a => a.label === 0).length;
+  document.getElementById('stats').innerHTML =
+    `<b>${annotated}/${total}</b> anotados &nbsp;|&nbsp; ` +
+    `<b style="color:var(--ok)">${ok} idênticos</b> &nbsp;|&nbsp; ` +
+    `<b style="color:var(--danger)">${damaged} com dano</b>`;
+}
+
+// ─── Calibration ──────────────────────────────────────────────────────────────
+document.getElementById('btn-calibrate').addEventListener('click', async () => {
+  const btn = document.getElementById('btn-calibrate');
+  btn.disabled = true;
+  btn.textContent = '⏳ Calculando...';
+  document.getElementById('result-box').classList.remove('visible');
+
+  try {
+    const res  = await fetch('/api/calibrate', { method: 'POST' });
+    const data = await res.json();
+
+    if (data.error) { toast(data.error, true); return; }
+
+    pendingThreshold = data.threshold;
+    document.getElementById('res-threshold').textContent = data.threshold.toFixed(3);
+    document.getElementById('res-prec').textContent = (data.precision * 100).toFixed(1) + '%';
+    document.getElementById('res-rec').textContent  = (data.recall    * 100).toFixed(1) + '%';
+    document.getElementById('res-f1').textContent   = data.f1.toFixed(3);
+    document.getElementById('res-ap').textContent   = data.ap.toFixed(3);
+    document.getElementById('res-n').textContent    = data.n_pairs + ' pares';
+    document.getElementById('result-box').classList.add('visible');
+    document.getElementById('btn-save-config').disabled = false;
+    toast('Calibração concluída!');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📊 Recalibrar Threshold';
+  }
+});
+
+document.getElementById('btn-save-config').addEventListener('click', async () => {
+  if (pendingThreshold === null) return;
+  const res  = await fetch('/api/save-threshold', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ threshold: pendingThreshold }),
+  });
+  const data = await res.json();
+  if (data.ok) toast(`💾 config.py atualizado → DECISION_THRESHOLD = ${pendingThreshold.toFixed(3)}`);
+  else toast(data.error || 'Erro ao salvar', true);
+});
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
+function toast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (isError ? ' error' : '');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.className = '', 3000);
+}
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

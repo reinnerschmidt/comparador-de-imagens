@@ -1,0 +1,33 @@
+# Agente IA (arquivos internos do Antigravity)
+.agent/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Ambientes virtuais
+.venv*/
+venv/
+env/
+
+# Dados locais (fotos, banco, relatórios não vão para o repo)
+data/
+
+# Relatórios gerados
+reports/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDEs
+.vscode/*.log
+.idea/
+
+# Variáveis de ambiente
+.env
+.env.local
