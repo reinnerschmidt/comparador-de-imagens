@@ -1,5 +1,4 @@
-# ── Stage 1: build ────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS base
+FROM python:3.12-slim
 
 # Dependências do sistema para OpenCV e Matplotlib
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -23,8 +22,10 @@ RUN mkdir -p data/inspections data/reports data/comparisons
 # Expõe a porta (Railway injeta PORT no env)
 EXPOSE 5051
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-5051}/health')"
-
-CMD ["python", "scripts/mobile_app/server.py"]
+# CMD usa shell form para expandir $PORT corretamente
+CMD cd /app && PYTHONPATH=src gunicorn \
+    --bind 0.0.0.0:${PORT:-5051} \
+    --timeout 180 \
+    --workers 1 \
+    --preload \
+    scripts.mobile_app.server:app
