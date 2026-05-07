@@ -468,6 +468,15 @@ def _run_area_analysis(aircraft_id: int, area_id: int) -> dict:
             ),
         )
     result["analysis_id"] = analysis_id
+
+    # Convert absolute heatmap path to relative for URL serving
+    heatmap_abs = result.get("heatmap_path")
+    if heatmap_abs:
+        try:
+            result["heatmap_path"] = str(Path(heatmap_abs).relative_to(BASE_DIR))
+        except ValueError:
+            pass  # already relative or outside BASE_DIR
+
     return result
 
 
@@ -542,8 +551,11 @@ def list_area_analyses(aircraft_id: int, area_id: int):
 def aircraft_report(aircraft_id: int):
     """Gera e serve o relatório PDF executivo do avião."""
     try:
-        from pipeline import run_pipeline  # noqa: F401 — importação dinâmica
+        from fpdf import FPDF
+    except ImportError:
+        return jsonify({"error": "fpdf2 não instalado — adicione fpdf2 ao requirements.txt"}), 500
 
+    try:
         with db_conn() as conn:
             aircraft = fetchone(conn, f"SELECT * FROM aircraft WHERE id={PH}", (aircraft_id,))
             analyses = fetchall(
@@ -554,24 +566,83 @@ def aircraft_report(aircraft_id: int):
                 (aircraft_id,),
             )
 
-        if not aircraft or not analyses:
+        if not aircraft:
+            return jsonify({"error": "Aeronave não encontrada"}), 404
+        if not analyses:
             return jsonify({"error": "Sem análises para gerar relatório"}), 404
 
-        from _pdf_report import generate_aircraft_pdf
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+
+        # ── Cabeçalho ──
+        pdf.set_font("Helvetica", "B", 20)
+        pdf.set_text_color(26, 86, 219)   # azul Embraer
+        pdf.cell(0, 12, "EMBRAER — AeroInspect", ln=True, align="C")
+        pdf.set_font("Helvetica", "", 11)
+        pdf.set_text_color(60, 60, 60)
+        pdf.cell(0, 8, f"Relatório de Inspeção — Aeronave: {aircraft['serial']} ({aircraft['name']})", ln=True, align="C")
+        pdf.cell(0, 6, f"Gerado em: {datetime.utcnow().strftime('%d/%m/%Y %H:%M')} UTC", ln=True, align="C")
+        pdf.ln(6)
+
+        # ── Resumo ──
+        total    = len(analyses)
+        damaged  = sum(1 for a in analyses if a["status"] != "OK")
+        ok_count = total - damaged
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(30, 30, 30)
+        pdf.cell(0, 9, "Resumo Executivo", ln=True)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(60, 7, f"Total de áreas: {total}")
+        pdf.set_text_color(16, 120, 50)
+        pdf.cell(60, 7, f"Íntegras: {ok_count}")
+        pdf.set_text_color(200, 30, 30)
+        pdf.cell(60, 7, f"Com diferença: {damaged}", ln=True)
+        pdf.set_text_color(30, 30, 30)
+        pdf.ln(4)
+
+        # ── Tabela de resultados ──
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_fill_color(26, 86, 219)
+        pdf.set_text_color(255, 255, 255)
+        col_w = [55, 22, 22, 22, 60]
+        headers = ["Área", "Semântico", "ORB", "Final", "Status"]
+        for i, h in enumerate(headers):
+            pdf.cell(col_w[i], 8, h, border=1, fill=True, align="C")
+        pdf.ln()
+
+        pdf.set_font("Helvetica", "", 10)
+        for a in analyses:
+            status = a["status"] or "—"
+            ok = status == "OK"
+            pdf.set_text_color(16, 100, 40) if ok else pdf.set_text_color(180, 20, 20)
+            row = [
+                (a.get("area_name") or "")[:30],
+                f"{a['emb_score']:.3f}",
+                f"{a['orb_score']:.3f}",
+                f"{a['final_score']:.3f}",
+                "Íntegro" if ok else "⚠ Diferença detectada",
+            ]
+            for i, cell in enumerate(row):
+                pdf.cell(col_w[i], 7, cell, border=1, align="C" if i > 0 else "L")
+            pdf.ln()
+            pdf.set_text_color(30, 30, 30)
+
+        pdf.ln(8)
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.set_text_color(120, 120, 120)
+        pdf.cell(0, 6, "Este relatório foi gerado automaticamente pelo sistema AeroInspect e deve ser validado por inspetor certificado.", ln=True)
+
         ts       = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        pdf_path = REPORTS_DIR / f"report_{aircraft['serial']}_{ts}.pdf"
-        generate_aircraft_pdf(aircraft, analyses, str(pdf_path))
+        pdf_name = f"report_{aircraft['serial']}_{ts}.pdf"
+        pdf_path = REPORTS_DIR / pdf_name
+        pdf.output(str(pdf_path))
 
-        # Atualiza path no banco para a análise mais recente
-        with db_conn() as conn:
-            conn.cursor().execute(
-                f"UPDATE analyses SET pdf_path={PH} WHERE aircraft_id={PH}",
-                (str(pdf_path.relative_to(BASE_DIR)), aircraft_id),
-            )
-
-        return send_from_directory(str(REPORTS_DIR), pdf_path.name,
-                                   as_attachment=True,
-                                   download_name=f"AeroInspect_{aircraft['serial']}.pdf")
+        return send_from_directory(
+            str(REPORTS_DIR), pdf_name,
+            as_attachment=True,
+            download_name=f"AeroInspect_{aircraft['serial']}.pdf",
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

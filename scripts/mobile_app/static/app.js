@@ -4,7 +4,21 @@ const API = {
     const bust = url.includes('?') ? `&_t=${Date.now()}` : `?_t=${Date.now()}`;
     return fetch(url + bust, { cache: 'no-store' }).then(r => r.ok ? r.json() : r.json().then(e => {throw e})).catch(err => { toast(err.error || 'Erro de conexão', 'err'); throw err; });
   },
-  post: (url, d)   => fetch(url, {method:'POST',  headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)}).then(r => r.ok ? r.json() : r.json().then(e => {throw e})).catch(err => { toast(err.error || 'Erro ao salvar', 'err'); throw err; }),
+  post: (url, d, timeoutMs = 0) => {
+    const opts = {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)};
+    if (timeoutMs > 0) {
+      const ctrl = new AbortController();
+      opts.signal = ctrl.signal;
+      setTimeout(() => ctrl.abort(), timeoutMs);
+    }
+    return fetch(url, opts)
+      .then(r => r.ok ? r.json() : r.json().then(e => {throw e}))
+      .catch(err => {
+        if (err.name === 'AbortError') { toast('Tempo limite excedido. Tente novamente.', 'err'); throw err; }
+        toast(err.error || 'Erro ao salvar', 'err');
+        throw err;
+      });
+  },
   put:  (url, d)   => fetch(url, {method:'PUT',   headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)}).then(r => r.ok ? r.json() : r.json().then(e => {throw e})).catch(err => { toast(err.error || 'Erro ao atualizar', 'err'); throw err; }),
   del:  (url)      => fetch(url, {method:'DELETE'}).then(r => r.ok ? r.json() : r.json().then(e => {throw e})).catch(err => { toast(err.error || 'Erro ao remover', 'err'); throw err; }),
 };
@@ -188,18 +202,19 @@ async function renderAircraftDetail(app, id) {
 async function analyzeAircraft(id) {
   const btn = document.getElementById('btn-analyze-aircraft');
   btn.disabled = true;
-  btn.textContent = '⏳ Analisando...';
+  btn.innerHTML = '⏳ Analisando… <small style="opacity:.7;font-size:.8rem">(pode levar até 2 min)</small>';
   try {
-    const res = await API.post(`/api/aircraft/${id}/analyze`, {});
+    const res = await API.post(`/api/aircraft/${id}/analyze`, {}, 120000); // 2 min timeout
     const ok  = res.results?.filter(r => r.status === 'OK').length || 0;
     const tot = res.results?.length || 0;
     toast(`✅ ${ok}/${tot} áreas íntegras`, 'ok');
-    // Redireciona para o resultado da primeira análise com dano
+    // Navega para a primeira área com dano, ou recarrega a tela do avião
     const damaged = res.results?.find(r => r.analysis_id && r.status !== 'OK');
     if (damaged) go(`/analysis/${damaged.analysis_id}`);
+    else renderAircraftDetail(document.getElementById('app'), id);
   } catch(e) {
     btn.disabled = false;
-    btn.textContent = '🔬 Analisar Avião (todas as áreas)';
+    btn.textContent = '🔬 Analisar Avião';
   }
 }
 

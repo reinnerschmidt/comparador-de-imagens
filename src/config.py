@@ -32,7 +32,7 @@ EMBEDDING_WEIGHT: float = 0.95
 ORB_WEIGHT: float = 0.05
 
 # ─── Decision ─────────────────────────────────────────────────────────────────
-# Calibrado analiticamente com 5 pares reais + EfficientNetB0:
-#   manche (sem dano): 0.855 | console (com dano): 0.851 → margem de 0.004
-# IMPORTANTE: recalibrar via anotador ao adicionar mais pares reais.
-DECISION_THRESHOLD: float = 0.853
+# Aviação: falso negativo (dano não detectado) é mais crítico que falso positivo.
+# Threshold conservador: qualquer score abaixo de 0.92 vai para inspeção manual.
+# Recalibrar via loop de feedback quando houver mais pares anotados.
+DECISION_THRESHOLD: float = 0.92
