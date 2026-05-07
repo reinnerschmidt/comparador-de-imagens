@@ -209,13 +209,14 @@ def init_db() -> None:
             cur.execute("SELECT aircraft_id FROM areas LIMIT 1")
             cur.execute("DROP TABLE areas")
         except Exception:
-            pass
+            conn.rollback()  # reset aborted transaction before continuing
 
         schema = SCHEMA_PG if DB_URL else SCHEMA_SQLITE
         for stmt in schema.split(";"):
             stmt = stmt.strip()
             if stmt:
                 cur.execute(stmt)
+
 
 
 init_db()
