@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 80" fill="none">
+  <!-- Bird/arrow icon -->
+  <g transform="translate(0, 10)">
+    <!-- Top wing -->
+    <polygon points="18,10 52,30 38,30 38,30" fill="#1034A6"/>
+    <!-- Body -->
+    <polygon points="8,30 52,30 8,38 0,34" fill="#1034A6"/>
+    <!-- Bottom wing -->
+    <polygon points="18,58 52,38 38,38 38,38" fill="#1034A6"/>
+    <!-- Fuselage triangle -->
+    <polygon points="38,30 58,30 38,38" fill="#1034A6"/>
+  </g>
+  <!-- EMBRAER text -->
+  <text x="72" y="52" font-family="Arial Black, Helvetica, sans-serif" font-size="28" font-weight="900" fill="#1034A6" letter-spacing="1">EMBRAER</text>
+</svg>

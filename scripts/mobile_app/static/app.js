@@ -53,17 +53,21 @@ function route() {
 async function renderHome(app) {
   app.innerHTML = `
     <div class="app-header">
-      <h1>🛩️ AeroInspect</h1>
+      <a class="header-logo" href="#/">
+        <img src="/static/embraer-logo.svg" alt="Embraer">
+      </a>
+      <div class="header-logo-divider"></div>
+      <h1>AeroInspect</h1>
     </div>
     <div class="view">
       <div class="section-label">Aeronaves</div>
-      <div id="home-aircraft"><div class="spinner"></div></div>
+      <div id="home-aircraft" class="cards-grid"><div class="spinner"></div></div>
       <button class="btn btn-ghost" onclick="go('/aircraft/new')" style="margin-top:8px">+ Nova aeronave</button>
 
       <div class="divider" style="margin:24px 0"></div>
 
       <div class="section-label">Modelos de Máscara (Globais)</div>
-      <div id="home-areas"><div class="spinner"></div></div>
+      <div id="home-areas" class="cards-grid"><div class="spinner"></div></div>
       <button class="btn btn-ghost" onclick="go('/area/new')" style="margin-top:8px">+ Novo modelo global</button>
     </div>`;
 
@@ -110,6 +114,8 @@ function renderNewAircraft(app) {
   app.innerHTML = `
     <div class="app-header">
       <button class="btn-icon" onclick="history.back()">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
       <h1>Nova aeronave</h1>
     </div>
     <div class="view">
@@ -141,15 +147,17 @@ async function renderAircraftDetail(app, id) {
   app.innerHTML = `
     <div class="app-header">
       <button class="btn-icon" onclick="go('/')">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
       <h1 id="ac-title">…</h1>
       <button class="btn-icon" style="color:var(--danger)" onclick="deleteAircraft(${id})" title="Remover">🗑</button>
     </div>
     <div class="view">
       <div class="section-label">Selecione a área para inspecionar</div>
-      <div id="areas-grid"><div class="spinner"></div></div>
-      <div style="margin-top:24px; display:flex; flex-direction:column; gap:10px;">
-        <button class="btn btn-primary" onclick="analyzeAircraft(${id})" id="btn-analyze-aircraft">🔬 Analisar Avião (todas as áreas)</button>
-        <button class="btn btn-ghost" onclick="downloadReport(${id})" id="btn-report">📄 Baixar Relatório PDF</button>
+      <div id="areas-grid" class="cards-grid"><div class="spinner"></div></div>
+      <div class="btn-row" style="margin-top:24px;">
+        <button class="btn btn-primary" onclick="analyzeAircraft(${id})" id="btn-analyze-aircraft">🔬 Analisar Avião</button>
+        <button class="btn btn-ghost" onclick="downloadReport(${id})" id="btn-report">📄 Relatório PDF</button>
       </div>
     </div>`;
 
