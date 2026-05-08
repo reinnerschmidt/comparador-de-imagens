@@ -123,6 +123,7 @@ SCHEMA_SQLITE = """
         aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
         area_id     INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
         position    TEXT,
+        phase       TEXT DEFAULT 'Recebimento',
         mode        TEXT NOT NULL CHECK(mode IN ('before','after')),
         file_path   TEXT NOT NULL,
         captured_at TEXT DEFAULT (datetime('now'))
@@ -132,6 +133,7 @@ SCHEMA_SQLITE = """
         aircraft_id     INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
         area_id         INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
         position        TEXT,
+        phase           TEXT DEFAULT 'Recebimento',
         before_photo_id INTEGER REFERENCES inspection_photos(id),
         after_photo_id  INTEGER REFERENCES inspection_photos(id),
         emb_score       REAL,
@@ -174,6 +176,7 @@ SCHEMA_PG = """
         aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
         area_id     INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
         position    TEXT,
+        phase       TEXT DEFAULT 'Recebimento',
         mode        TEXT NOT NULL CHECK(mode IN ('before','after')),
         file_path   TEXT NOT NULL,
         captured_at TIMESTAMPTZ DEFAULT NOW()
@@ -183,6 +186,7 @@ SCHEMA_PG = """
         aircraft_id     INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
         area_id         INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
         position        TEXT,
+        phase           TEXT DEFAULT 'Recebimento',
         before_photo_id INTEGER REFERENCES inspection_photos(id),
         after_photo_id  INTEGER REFERENCES inspection_photos(id),
         emb_score       REAL,
@@ -221,10 +225,14 @@ def init_db() -> None:
             if stmt:
                 cur.execute(stmt)
 
-        # Migração: adiciona coluna position se não existir (bancos anteriores)
+        # Migração: adiciona coluna position e phase se não existir (bancos anteriores)
         for table in ("inspection_photos", "analyses"):
             try:
                 cur.execute(f"ALTER TABLE {table} ADD COLUMN position TEXT")
+            except Exception:
+                conn.rollback()
+            try:
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN phase TEXT DEFAULT 'Recebimento'")
             except Exception:
                 conn.rollback()
 
@@ -415,12 +423,14 @@ def upload_photo():
 
     rel_path = str(file_path.relative_to(BASE_DIR))
 
+    phase = (data.get("phase") or "Recebimento").strip()
+    
     with db_conn() as conn:
         photo_id = execute_returning(
             conn,
-            f"INSERT INTO inspection_photos (aircraft_id, area_id, position, mode, file_path) "
-            f"VALUES ({PH},{PH},{PH},{PH},{PH})",
-            (aircraft_id, area_id, position, mode, rel_path),
+            f"INSERT INTO inspection_photos (aircraft_id, area_id, position, phase, mode, file_path) "
+            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH})",
+            (aircraft_id, area_id, position, phase, mode, rel_path),
         )
 
     return jsonify({"id": photo_id, "file_path": rel_path, "mode": mode}), 201
@@ -428,22 +438,24 @@ def upload_photo():
 
 @app.route("/api/aircraft/<int:aircraft_id>/areas/<int:area_id>/photos")
 def list_photos(aircraft_id: int, area_id: int):
-    """Lista as fotos BEFORE e AFTER mais recentes da área neste avião."""
+    """Lista as fotos BEFORE e AFTER mais recentes da área neste avião, filtradas por posição e fase."""
     position = request.args.get("position") or None
+    phase = request.args.get("phase") or "Recebimento"
+    
     with db_conn() as conn:
         if position:
             rows = fetchall(
                 conn,
                 f"SELECT id, mode, file_path, captured_at FROM inspection_photos "
-                f"WHERE aircraft_id={PH} AND area_id={PH} AND position={PH} ORDER BY captured_at DESC",
-                (aircraft_id, area_id, position.upper()),
+                f"WHERE aircraft_id={PH} AND area_id={PH} AND position={PH} AND phase={PH} ORDER BY captured_at DESC",
+                (aircraft_id, area_id, position.upper(), phase),
             )
         else:
             rows = fetchall(
                 conn,
                 f"SELECT id, mode, file_path, captured_at FROM inspection_photos "
-                f"WHERE aircraft_id={PH} AND area_id={PH} ORDER BY captured_at DESC",
-                (aircraft_id, area_id),
+                f"WHERE aircraft_id={PH} AND area_id={PH} AND position IS NULL AND phase={PH} ORDER BY captured_at DESC",
+                (aircraft_id, area_id, phase),
             )
     result = {"before": None, "after": None, "all": []}
     for r in rows:
@@ -474,7 +486,7 @@ def list_position_areas(aircraft_id: int, position: str):
 
 # ─── Analysis ─────────────────────────────────────────────────────────────────
 
-def _run_area_analysis(aircraft_id: int, area_id: int, position: str | None = None) -> dict:
+def _run_area_analysis(aircraft_id: int, area_id: int, position: str | None = None, phase: str = "Recebimento") -> dict:
     """Executa pipeline IA para um par BEFORE/AFTER. Retorna resultado."""
     from analyzer import analyze_pair
 
@@ -489,16 +501,16 @@ def _run_area_analysis(aircraft_id: int, area_id: int, position: str | None = No
         before = fetchone(
             conn,
             f"SELECT id, file_path FROM inspection_photos "
-            f"WHERE aircraft_id={PH} AND area_id={PH} AND mode='before'{pos_filter} "
+            f"WHERE aircraft_id={PH} AND area_id={PH} AND mode='before' AND phase={PH}{pos_filter} "
             f"ORDER BY captured_at DESC LIMIT 1",
-            pos_params,
+            (aircraft_id, area_id, phase, position.upper()) if position else (aircraft_id, area_id, phase),
         )
         after = fetchone(
             conn,
             f"SELECT id, file_path FROM inspection_photos "
-            f"WHERE aircraft_id={PH} AND area_id={PH} AND mode='after'{pos_filter} "
+            f"WHERE aircraft_id={PH} AND area_id={PH} AND mode='after' AND phase={PH}{pos_filter} "
             f"ORDER BY captured_at DESC LIMIT 1",
-            pos_params,
+            (aircraft_id, area_id, phase, position.upper()) if position else (aircraft_id, area_id, phase),
         )
 
     if not before:
@@ -523,11 +535,11 @@ def _run_area_analysis(aircraft_id: int, area_id: int, position: str | None = No
     with db_conn() as conn:
         analysis_id = execute_returning(
             conn,
-            f"INSERT INTO analyses (aircraft_id, area_id, position, before_photo_id, after_photo_id, "
+            f"INSERT INTO analyses (aircraft_id, area_id, position, phase, before_photo_id, after_photo_id, "
             f"emb_score, orb_score, final_score, status, heatmap_path) "
-            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
+            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
             (
-                aircraft_id, area_id, position,
+                aircraft_id, area_id, position, phase,
                 before["id"], after["id"],
                 result["emb_score"], result["orb_score"], result["final_score"],
                 result["status"], rel_heatmap,
@@ -544,8 +556,9 @@ def analyze_area(aircraft_id: int, area_id: int):
     """Dispara análise IA para uma área específica."""
     data     = request.get_json(force=True) or {}
     position = (data.get("position") or "").strip().upper() or None
+    phase    = (data.get("phase") or "Recebimento").strip()
     try:
-        result = _run_area_analysis(aircraft_id, area_id, position)
+        result = _run_area_analysis(aircraft_id, area_id, position, phase)
         return jsonify(result), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
@@ -558,26 +571,27 @@ def analyze_aircraft(aircraft_id: int):
     """Dispara análise IA para todas as áreas com BEFORE+AFTER do avião."""
     data     = request.get_json(force=True) or {}
     position = (data.get("position") or "").strip().upper() or None
+    phase    = (data.get("phase") or "Recebimento").strip()
 
     with db_conn() as conn:
         if position:
             area_ids = fetchall(
                 conn,
-                f"SELECT DISTINCT area_id FROM inspection_photos WHERE aircraft_id={PH} AND position={PH}",
-                (aircraft_id, position),
+                f"SELECT DISTINCT area_id FROM inspection_photos WHERE aircraft_id={PH} AND position={PH} AND phase={PH}",
+                (aircraft_id, position, phase),
             )
         else:
             area_ids = fetchall(
                 conn,
-                f"SELECT DISTINCT area_id FROM inspection_photos WHERE aircraft_id={PH}",
-                (aircraft_id,),
+                f"SELECT DISTINCT area_id FROM inspection_photos WHERE aircraft_id={PH} AND phase={PH}",
+                (aircraft_id, phase),
             )
 
     results = []
     for row in area_ids:
         aid = row["area_id"]
         try:
-            r = _run_area_analysis(aircraft_id, aid, position)
+            r = _run_area_analysis(aircraft_id, aid, position, phase)
             results.append({"area_id": aid, **r})
         except ValueError as e:
             results.append({"area_id": aid, "error": str(e)})
@@ -635,18 +649,42 @@ def aircraft_report(aircraft_id: int):
         return jsonify({"error": "fpdf2 não instalado — adicione fpdf2 ao requirements.txt"}), 500
 
     try:
+        pos_filter = request.args.get("position")
+        phase_filter = request.args.get("phase") or "Recebimento"
+        
         with db_conn() as conn:
             aircraft = fetchone(conn, f"SELECT * FROM aircraft WHERE id={PH}", (aircraft_id,))
-            analyses = fetchall(
-                conn,
-                f"SELECT a.*, ar.name as area_name FROM analyses a "
-                f"JOIN areas ar ON ar.id = a.area_id "
-                f"WHERE a.aircraft_id={PH} ORDER BY a.created_at DESC",
-                (aircraft_id,),
-            )
+            
+            query = f"""
+                SELECT a.*, ar.name as area_name, 
+                pb.file_path as before_path, pa.file_path as after_path 
+                FROM analyses a 
+                JOIN areas ar ON ar.id = a.area_id 
+                LEFT JOIN inspection_photos pb ON pb.id = a.before_photo_id 
+                LEFT JOIN inspection_photos pa ON pa.id = a.after_photo_id 
+                WHERE a.aircraft_id={PH} AND a.phase={PH}
+            """
+            params = [aircraft_id, phase_filter]
+            if pos_filter:
+                query += f" AND a.position={PH}"
+                params.append(pos_filter)
+                
+            query += " ORDER BY a.created_at DESC"
+            analyses = fetchall(conn, query, tuple(params))
 
         if not aircraft:
             return jsonify({"error": "Aeronave não encontrada"}), 404
+            
+        # Filtrar para manter apenas a última análise por (área, posição)
+        unique_analyses = []
+        seen = set()
+        for a in analyses:
+            key = (a["area_id"], a.get("position"))
+            if key not in seen:
+                seen.add(key)
+                unique_analyses.append(a)
+        analyses = unique_analyses
+
         if not analyses:
             return jsonify({"error": "Sem análises para gerar relatório"}), 404
 
@@ -657,10 +695,13 @@ def aircraft_report(aircraft_id: int):
         # ── Cabeçalho ──
         pdf.set_font("Helvetica", "B", 20)
         pdf.set_text_color(26, 86, 219)   # azul Embraer
-        pdf.cell(0, 12, "EMBRAER — AeroInspect", ln=True, align="C")
+        pdf.cell(0, 12, "EMBRAER - AeroInspect", ln=True, align="C")
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(40, 40, 40)
+        pdf.cell(0, 8, f"Fase de Inspecao: {phase_filter}", ln=True, align="C")
         pdf.set_font("Helvetica", "", 11)
         pdf.set_text_color(60, 60, 60)
-        pdf.cell(0, 8, f"Relatório de Inspeção — Aeronave: {aircraft['serial']} ({aircraft['name']})", ln=True, align="C")
+        pdf.cell(0, 8, f"Relatorio de Inspecao - Aeronave: {aircraft['serial']} ({aircraft['name']})", ln=True, align="C")
         pdf.cell(0, 6, f"Gerado em: {datetime.utcnow().strftime('%d/%m/%Y %H:%M')} UTC", ln=True, align="C")
         pdf.ln(6)
 
@@ -672,11 +713,11 @@ def aircraft_report(aircraft_id: int):
         pdf.set_text_color(30, 30, 30)
         pdf.cell(0, 9, "Resumo Executivo", ln=True)
         pdf.set_font("Helvetica", "", 11)
-        pdf.cell(60, 7, f"Total de áreas: {total}")
+        pdf.cell(60, 7, f"Total de areas: {total}")
         pdf.set_text_color(16, 120, 50)
-        pdf.cell(60, 7, f"Íntegras: {ok_count}")
+        pdf.cell(60, 7, f"Integras: {ok_count}")
         pdf.set_text_color(200, 30, 30)
-        pdf.cell(60, 7, f"Com diferença: {damaged}", ln=True)
+        pdf.cell(60, 7, f"Com diferenca: {damaged}", ln=True)
         pdf.set_text_color(30, 30, 30)
         pdf.ln(4)
 
@@ -692,7 +733,7 @@ def aircraft_report(aircraft_id: int):
 
         pdf.set_font("Helvetica", "", 10)
         for a in analyses:
-            status = a["status"] or "—"
+            status = a["status"] or "-"
             ok = status == "OK"
             pdf.set_text_color(16, 100, 40) if ok else pdf.set_text_color(180, 20, 20)
             row = [
@@ -700,7 +741,7 @@ def aircraft_report(aircraft_id: int):
                 f"{a['emb_score']:.3f}",
                 f"{a['orb_score']:.3f}",
                 f"{a['final_score']:.3f}",
-                "Íntegro" if ok else "⚠ Diferença detectada",
+                "Integro" if ok else "[!] Diferenca detectada",
             ]
             for i, cell in enumerate(row):
                 pdf.cell(col_w[i], 7, cell, border=1, align="C" if i > 0 else "L")
@@ -710,7 +751,95 @@ def aircraft_report(aircraft_id: int):
         pdf.ln(8)
         pdf.set_font("Helvetica", "I", 9)
         pdf.set_text_color(120, 120, 120)
-        pdf.cell(0, 6, "Este relatório foi gerado automaticamente pelo sistema AeroInspect e deve ser validado por inspetor certificado.", ln=True)
+        pdf.cell(0, 6, "Este relatorio foi gerado automaticamente pelo sistema AeroInspect e deve ser validado por inspetor certificado.", ln=True)
+
+        # ── Páginas de Detalhes com Fotos ──
+        import os
+        from PIL import Image
+
+        def get_img_h(path, target_w):
+            try:
+                with Image.open(path) as im:
+                    w, h = im.size
+                    return target_w * (h / w)
+            except:
+                return 75
+
+        for a in analyses:
+            pdf.add_page()
+            
+            pos_text = f" | {a['position']}" if a.get('position') else ""
+            pdf.set_font("Helvetica", "B", 14)
+            pdf.set_text_color(30, 30, 30)
+            pdf.cell(0, 10, f"Detalhes da Inspecao: {a.get('area_name', '')}{pos_text}", ln=True, align="C")
+            
+            ok = a["status"] == "OK"
+            pdf.set_font("Helvetica", "B", 12)
+            if ok:
+                pdf.set_text_color(16, 120, 50)
+                pdf.cell(0, 8, "Status: Integro", ln=True, align="C")
+            else:
+                pdf.set_text_color(200, 30, 30)
+                pdf.cell(0, 8, "Status: [!] Diferenca Detectada", ln=True, align="C")
+                
+            pdf.set_font("Helvetica", "", 10)
+            pdf.set_text_color(60, 60, 60)
+            pdf.cell(0, 6, f"Score Semantico: {a['emb_score']:.3f}   |   Score ORB: {a['orb_score']:.3f}   |   Score Final: {a['final_score']:.3f}", ln=True, align="C")
+            pdf.ln(6)
+            
+            before_path = a.get("before_path")
+            after_path = a.get("after_path")
+            heatmap_path = a.get("heatmap_path")
+            
+            w = 90
+            x1 = 12
+            x2 = 108
+            
+            # Print titles for before and after
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(80, 80, 80)
+            pdf.set_x(x1)
+            pdf.cell(w, 6, "ANTES", align="C")
+            pdf.set_x(x2)
+            pdf.cell(w, 6, "DEPOIS", ln=True, align="C")
+            
+            y_imgs = pdf.get_y()
+            
+            max_img_h = 0
+            try:
+                if before_path and os.path.exists(before_path):
+                    h_b = get_img_h(before_path, w)
+                    pdf.image(before_path, x=x1, y=y_imgs, w=w)
+                    max_img_h = max(max_img_h, h_b)
+                if after_path and os.path.exists(after_path):
+                    h_a = get_img_h(after_path, w)
+                    pdf.image(after_path, x=x2, y=y_imgs, w=w)
+                    max_img_h = max(max_img_h, h_a)
+            except Exception as e:
+                pdf.set_xy(x1, y_imgs)
+                pdf.cell(0, 10, f"Erro ao carregar imagens: {e}", ln=True)
+                
+            pdf.set_y(y_imgs + max_img_h + 8)
+            
+            if heatmap_path and os.path.exists(heatmap_path):
+                pdf.set_font("Helvetica", "B", 11)
+                pdf.set_text_color(30, 30, 30)
+                pdf.cell(0, 8, "Mapa de Calor (Heatmap)", ln=True, align="C")
+                pdf.ln(2)
+                heatmap_w = 120
+                heatmap_x = (210 - heatmap_w) / 2
+                try:
+                    # O heatmap_path aponta para uma imagem composta (Antes | Depois | Heatmap)
+                    # Vamos recortar apenas o terço final (o heatmap puro) para o PDF
+                    with Image.open(heatmap_path) as im:
+                        iw, ih = im.size
+                        cropped = im.crop((iw * 2 // 3, 0, iw, ih))
+                        temp_path = heatmap_path.replace(".jpg", "_crop.jpg")
+                        cropped.save(temp_path)
+                    
+                    pdf.image(temp_path, x=heatmap_x, y=pdf.get_y(), w=heatmap_w)
+                except Exception as e:
+                    pdf.cell(0, 10, f"Erro ao processar heatmap", ln=True, align="C")
 
         ts       = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         pdf_name = f"report_{aircraft['serial']}_{ts}.pdf"

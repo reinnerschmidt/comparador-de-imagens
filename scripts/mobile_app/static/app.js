@@ -49,6 +49,7 @@ function route() {
   let r;
 
   if (h === '/')                              return renderHome(app);
+  if (h === '/aircrafts')                     return renderAircraftList(app);
   if (h === '/aircraft/new')                  return renderNewAircraft(app);
   if (h === '/area/new')                      return renderNewArea(app);
   if ((r = m(/^\/aircraft\/(\d+)$/)))         return renderAircraftDetail(app, r[1]);
@@ -70,6 +71,20 @@ function route() {
 /* ════════════════════════════════════════════
    HOME — Lista de aeronaves + Modelos Globais
 ════════════════════════════════════════════ */
+function getPhase() {
+  return localStorage.getItem('phase') || 'Recebimento';
+}
+
+function setPhase(phase) {
+  localStorage.setItem('phase', phase);
+  go('/aircrafts');
+}
+
+function toggleIffMenu() {
+  const menu = document.getElementById('iff-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
 async function renderHome(app) {
   app.innerHTML = `
     <div class="app-header">
@@ -77,7 +92,66 @@ async function renderHome(app) {
         <img src="/static/embraer-logo.svg" alt="Embraer">
       </a>
       <div class="header-logo-divider"></div>
-      <h1>AeroInspect</h1>
+      <h1>Gestão de Inspeção Visual</h1>
+    </div>
+    <div class="view" style="display:flex;flex-direction:column;gap:16px;padding-top:24px;">
+      
+      <div class="card" onclick="setPhase('Recebimento')" style="padding:16px;align-items:center;">
+        <img src="/static/icons/icon_recebimento.png" style="width:48px;height:48px;border-radius:8px;margin-right:16px;">
+        <div class="card-body">
+          <div class="card-title" style="font-size:1.1rem;">Recebimento</div>
+          <div class="card-sub">Inspeção de chegada</div>
+        </div>
+        <span style="color:var(--muted);font-size:1.5rem">›</span>
+      </div>
+
+      <div class="card" onclick="setPhase('IFP')" style="padding:16px;align-items:center;">
+        <img src="/static/icons/icon_ifp.png" style="width:48px;height:48px;border-radius:8px;margin-right:16px;">
+        <div class="card-body">
+          <div class="card-title" style="font-size:1.1rem;">IFP</div>
+          <div class="card-sub">Inspeção Final da Produção</div>
+        </div>
+        <span style="color:var(--muted);font-size:1.5rem">›</span>
+      </div>
+
+      <div class="card" onclick="toggleIffMenu()" style="padding:16px;align-items:center;background:var(--card-bg);">
+        <img src="/static/icons/icon_iff_producao.png" style="width:48px;height:48px;border-radius:8px;margin-right:16px;">
+        <div class="card-body">
+          <div class="card-title" style="font-size:1.1rem;">IFF</div>
+          <div class="card-sub">Inspeção Final de Fabricação</div>
+        </div>
+        <span style="color:var(--muted);font-size:1.5rem">▾</span>
+      </div>
+      
+      <div id="iff-menu" style="display:none;margin-left:32px;margin-top:-8px;border-left:2px solid var(--border);padding-left:16px;display:flex;flex-direction:column;gap:8px;">
+        <div class="card" onclick="setPhase('IFF - Qualidade')" style="padding:12px;background:rgba(255,255,255,0.02)">
+          <img src="/static/icons/icon_iff_qualidade.png" style="width:32px;height:32px;border-radius:6px;margin-right:12px;">
+          <div class="card-body"><div class="card-title">Qualidade (QA)</div></div>
+        </div>
+        <div class="card" onclick="setPhase('IFF - Produção')" style="padding:12px;background:rgba(255,255,255,0.02)">
+          <img src="/static/icons/icon_iff_producao.png" style="width:32px;height:32px;border-radius:6px;margin-right:12px;">
+          <div class="card-body"><div class="card-title">Produção</div></div>
+        </div>
+      </div>
+
+    </div>
+  `;
+  document.getElementById('iff-menu').style.display = 'none'; // reset menu state
+}
+
+/* ════════════════════════════════════════════
+   AIRCRAFT LIST — Lista de aeronaves + Modelos
+════════════════════════════════════════════ */
+async function renderAircraftList(app) {
+  const phase = getPhase();
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/')">‹</button>
+      <a class="header-logo" href="#/">
+        <img src="/static/embraer-logo.svg" alt="Embraer">
+      </a>
+      <div class="header-logo-divider"></div>
+      <h1 style="font-size:1.1rem">${phase}</h1>
     </div>
     <div class="view">
       <div class="section-label">Aeronaves</div>
@@ -195,7 +269,7 @@ async function analyzeAircraft(id) {
   btn.disabled = true;
   btn.innerHTML = '⏳ Analisando… <small style="opacity:.7;font-size:.8rem">(pode levar até 2 min)</small>';
   try {
-    const res = await API.post(`/api/aircraft/${id}/analyze`, {}, 120000);
+    const res = await API.post(`/api/aircraft/${id}/analyze`, { phase: getPhase() }, 120000);
     const ok  = res.results?.filter(r => r.status === 'OK').length || 0;
     const tot = res.results?.length || 0;
     toast(`✅ ${ok}/${tot} áreas íntegras`, 'ok');
@@ -225,12 +299,13 @@ async function renderPositionDetail(app, aircraftId, position) {
       <div id="pos-areas" class="cards-grid"><div class="spinner"></div></div>
       <div class="btn-row" style="margin-top:20px">
         <button class="btn btn-primary" onclick="analyzePosition(${aircraftId},'${position}')" id="btn-analyze-pos">🔬 Analisar Posição</button>
-        <button class="btn btn-ghost" onclick="downloadReport(${aircraftId})">📄 PDF</button>
+        <button class="btn btn-ghost" onclick="downloadReport(${aircraftId}, '${position}')">📄 PDF</button>
       </div>
     </div>`;
 
+  const phase = getPhase();
   const [posAreas, allAreas] = await Promise.all([
-    API.get(`/api/aircraft/${aircraftId}/pos/${position}/areas`).catch(() => []),
+    API.get(`/api/aircraft/${aircraftId}/pos/${position}/areas?phase=${phase}`).catch(() => []),
     API.get('/api/areas').catch(() => []),
   ]);
 
@@ -256,7 +331,7 @@ async function analyzePosition(aircraftId, position) {
   btn.disabled = true;
   btn.innerHTML = '⏳ Analisando…';
   try {
-    const res = await API.post(`/api/aircraft/${aircraftId}/analyze`, { position }, 120000);
+    const res = await API.post(`/api/aircraft/${aircraftId}/analyze`, { position, phase: getPhase() }, 120000);
     const ok  = res.results?.filter(r => r.status === 'OK').length || 0;
     const tot = res.results?.length || 0;
     toast(`✅ ${ok}/${tot} áreas íntegras`, 'ok');
@@ -286,7 +361,8 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
     <h1>${label}</h1>
   </div><div class="view" style="padding:0"><div class="spinner" style="padding:40px"></div></div>`;
 
-  const posQ = position ? `?position=${position}` : '';
+  const phase = getPhase();
+  const posQ = position ? `?position=${position}&phase=${phase}` : `?phase=${phase}`;
   const photos = await API.get(`/api/aircraft/${aircraftId}/areas/${areaId}/photos${posQ}`).catch(() => ({}));
   const photo = mode === 'before' ? photos.before : photos.after;
 
@@ -307,8 +383,11 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
     </div>`;
 }
 
-function downloadReport(aircraftId) {
-  window.open(`/api/aircraft/${aircraftId}/report`, '_blank');
+function downloadReport(aircraftId, position) {
+  const phase = getPhase();
+  let url = `/api/aircraft/${aircraftId}/report?phase=${encodeURIComponent(phase)}`;
+  if (position) url += `&position=${encodeURIComponent(position)}`;
+  window.open(url, '_blank');
 }
 
 async function renderAreaDetail(app, templateId, aircraftId, position) {
@@ -335,7 +414,8 @@ async function renderAreaDetail(app, templateId, aircraftId, position) {
     return;
   }
 
-  const posQ = position ? `?position=${position}` : '';
+  const phase = getPhase();
+  const posQ = position ? `?position=${position}&phase=${phase}` : `?phase=${phase}`;
   const [ac, photos, analyses] = await Promise.all([
     API.get('/api/aircraft').then(list => list.find(a => a.id == aircraftId) || {}),
     API.get(`/api/aircraft/${aircraftId}/areas/${templateId}/photos${posQ}`).catch(() => ({before:null,after:null})),
@@ -917,6 +997,7 @@ async function confirmCrop() {
         area_id:     parseInt(areaId),
         mode,
         position:    position || null,
+        phase:       getPhase(),
         image:       dataUrl,
       });
       toast('✅ Foto enviada!', 'ok');
