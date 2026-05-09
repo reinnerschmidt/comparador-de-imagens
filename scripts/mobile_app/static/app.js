@@ -305,7 +305,7 @@ async function renderPositionDetail(app, aircraftId, position) {
 
   const phase = getPhase();
   const [posAreas, allAreas] = await Promise.all([
-    API.get(`/api/aircraft/${aircraftId}/pos/${position}/areas?phase=${phase}`).catch(() => []),
+    API.get(`/api/aircraft/${aircraftId}/pos/${position}/areas?phase=${encodeURIComponent(phase)}`).catch(() => []),
     API.get('/api/areas').catch(() => []),
   ]);
 
@@ -362,7 +362,8 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
   </div><div class="view" style="padding:0"><div class="spinner" style="padding:40px"></div></div>`;
 
   const phase = getPhase();
-  const posQ = position ? `?position=${position}&phase=${phase}` : `?phase=${phase}`;
+  const phaseEnc = encodeURIComponent(phase);
+  const posQ = position ? `?position=${position}&phase=${phaseEnc}` : `?phase=${phaseEnc}`;
   const photos = await API.get(`/api/aircraft/${aircraftId}/areas/${areaId}/photos${posQ}`).catch(() => ({}));
   const photo = mode === 'before' ? photos.before : photos.after;
 
@@ -415,7 +416,8 @@ async function renderAreaDetail(app, templateId, aircraftId, position) {
   }
 
   const phase = getPhase();
-  const posQ = position ? `?position=${position}&phase=${phase}` : `?phase=${phase}`;
+  const phaseEnc = encodeURIComponent(phase);
+  const posQ = position ? `?position=${position}&phase=${phaseEnc}` : `?phase=${phaseEnc}`;
   const [ac, photos, analyses] = await Promise.all([
     API.get('/api/aircraft').then(list => list.find(a => a.id == aircraftId) || {}),
     API.get(`/api/aircraft/${aircraftId}/areas/${templateId}/photos${posQ}`).catch(() => ({before:null,after:null})),

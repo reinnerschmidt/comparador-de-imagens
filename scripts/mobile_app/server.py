@@ -227,14 +227,24 @@ def init_db() -> None:
 
         # Migração: adiciona coluna position e phase se não existir (bancos anteriores)
         for table in ("inspection_photos", "analyses"):
+            # Check if column exists first (safer for Postgres)
             try:
-                cur.execute(f"ALTER TABLE {table} ADD COLUMN position TEXT")
+                cur.execute(f"SELECT position FROM {table} LIMIT 1")
             except Exception:
                 conn.rollback()
+                try:
+                    cur.execute(f"ALTER TABLE {table} ADD COLUMN position TEXT")
+                except Exception:
+                    conn.rollback()
+            
             try:
-                cur.execute(f"ALTER TABLE {table} ADD COLUMN phase TEXT DEFAULT 'Recebimento'")
+                cur.execute(f"SELECT phase FROM {table} LIMIT 1")
             except Exception:
                 conn.rollback()
+                try:
+                    cur.execute(f"ALTER TABLE {table} ADD COLUMN phase TEXT DEFAULT 'Recebimento'")
+                except Exception:
+                    conn.rollback()
 
 
 # ─── Heatmap URL helper ───────────────────────────────────────────────────────
@@ -434,7 +444,6 @@ def upload_photo():
         )
 
     return jsonify({"id": photo_id, "file_path": rel_path, "mode": mode}), 201
-
 
 @app.route("/api/aircraft/<int:aircraft_id>/areas/<int:area_id>/photos")
 def list_photos(aircraft_id: int, area_id: int):
