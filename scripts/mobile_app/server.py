@@ -153,6 +153,18 @@ SCHEMA_SQLITE = """
         notes                   TEXT,
         created_at              TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS inspection_groups (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
+        position    TEXT,
+        name        TEXT NOT NULL,
+        created_at  TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS group_subareas (
+        group_id INTEGER NOT NULL REFERENCES inspection_groups(id) ON DELETE CASCADE,
+        area_id  INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+        PRIMARY KEY (group_id, area_id)
+    );
 """
 
 SCHEMA_PG = """
@@ -205,6 +217,18 @@ SCHEMA_PG = """
         corrected_region        TEXT,
         notes                   TEXT,
         created_at              TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS inspection_groups (
+        id          SERIAL PRIMARY KEY,
+        aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
+        position    TEXT,
+        name        TEXT NOT NULL,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS group_subareas (
+        group_id INTEGER NOT NULL REFERENCES inspection_groups(id) ON DELETE CASCADE,
+        area_id  INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+        PRIMARY KEY (group_id, area_id)
     );
 """
 
@@ -385,6 +409,72 @@ def save_mask(area_id: int):
             f"UPDATE areas SET mask_points={PH}, mask_thumb={PH}, "
             f"ref_width={PH}, ref_height={PH} WHERE id={PH}",
             (points, thumb, ref_w, ref_h, area_id),
+        )
+    return jsonify({"ok": True})
+
+
+# ─── Inspection Groups (Áreas Parentais) ──────────────────────────────────────
+
+@app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/groups")
+def list_groups(aircraft_id: int, position: str):
+    position = position.upper()
+    with db_conn() as conn:
+        groups = fetchall(
+            conn,
+            f"SELECT id, name, created_at FROM inspection_groups WHERE aircraft_id={PH} AND position={PH} ORDER BY name",
+            (aircraft_id, position)
+        )
+        for g in groups:
+            # fetch subareas for each group
+            g["subareas"] = fetchall(
+                conn,
+                f"SELECT a.id, a.name, a.mask_thumb FROM areas a "
+                f"JOIN group_subareas gs ON gs.area_id = a.id "
+                f"WHERE gs.group_id={PH} ORDER BY a.name",
+                (g["id"],)
+            )
+    return jsonify(groups)
+
+
+@app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/groups", methods=["POST"])
+def create_group(aircraft_id: int, position: str):
+    data = request.get_json(force=True)
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Nome da área é obrigatório"}), 400
+    position = position.upper()
+    with db_conn() as conn:
+        new_id = execute_returning(
+            conn,
+            f"INSERT INTO inspection_groups (aircraft_id, position, name) VALUES ({PH}, {PH}, {PH})",
+            (aircraft_id, position, name)
+        )
+    return jsonify({"id": new_id, "name": name}), 201
+
+
+@app.route("/api/groups/<int:group_id>/subareas", methods=["POST"])
+def add_subarea_to_group(group_id: int):
+    data = request.get_json(force=True)
+    area_id = data.get("area_id")
+    if not area_id:
+        return jsonify({"error": "area_id é obrigatório"}), 400
+    try:
+        with db_conn() as conn:
+            conn.cursor().execute(
+                f"INSERT INTO group_subareas (group_id, area_id) VALUES ({PH}, {PH})",
+                (group_id, area_id)
+            )
+        return jsonify({"ok": True}), 201
+    except Exception:
+        return jsonify({"error": "Sub-área já vinculada ou erro interno"}), 400
+
+
+@app.route("/api/groups/<int:group_id>/subareas/<int:area_id>", methods=["DELETE"])
+def remove_subarea_from_group(group_id: int, area_id: int):
+    with db_conn() as conn:
+        conn.cursor().execute(
+            f"DELETE FROM group_subareas WHERE group_id={PH} AND area_id={PH}",
+            (group_id, area_id)
         )
     return jsonify({"ok": True})
 

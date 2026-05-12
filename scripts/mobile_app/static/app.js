@@ -56,6 +56,7 @@ function route() {
   if ((r = m(/^\/area\/(\d+)\/mask$/)))       return renderMaskEditor(app, r[1]);
   // Position routes (new)
   if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)$/)))                                    return renderPositionDetail(app, r[1], r[2]);
+  if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/group\/(\d+)$/)))                      return renderGroupDetail(app, r[1], r[2], r[3]);
   if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)$/)))                       return renderAreaDetail(app, r[3], r[1], r[2]);
   if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/(before|after)\/view$/))) return renderPhotoViewer(app, r[1], r[3], r[4], r[2]);
   if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/(before|after)$/)))       return renderCapture(app, r[1], r[3], r[4], r[2]);
@@ -294,36 +295,180 @@ async function renderPositionDetail(app, aircraftId, position) {
       <div class="header-logo-divider"></div>
       <h1>${esc(aircraft.serial)} | ${position}</h1>
     </div>
-    <div class="view">
-      <div class="section-label">Selecione a área</div>
+    <div class="view" style="padding-bottom: 80px">
+      <div class="section-label" style="display:flex; justify-content:space-between; align-items:center">
+        Áreas (Pastas)
+        <button class="btn btn-ghost btn-small" onclick="createNewGroup(${aircraftId}, '${position}')" style="padding:4px 8px; font-size:0.8rem">+ Nova</button>
+      </div>
+      <div id="pos-groups" class="cards-grid"><div class="spinner"></div></div>
+      
+      <div class="section-label" style="margin-top:24px">Sub-áreas Livres</div>
       <div id="pos-areas" class="cards-grid"><div class="spinner"></div></div>
+      
       <div class="btn-row" style="margin-top:20px">
         <button class="btn btn-primary" onclick="analyzePosition(${aircraftId},'${position}')" id="btn-analyze-pos">🔬 Analisar Posição</button>
         <button class="btn btn-ghost" onclick="downloadReport(${aircraftId}, '${position}')">📄 PDF</button>
       </div>
+    </div>
+    <div id="move-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:999; align-items:center; justify-content:center; padding:16px;">
+      <div class="card" style="width:100%; max-width:400px; padding:24px; background:var(--card-bg);">
+        <h3 style="margin-bottom:16px;">Mover Sub-área</h3>
+        <p style="margin-bottom:12px; color:var(--muted); font-size:0.9rem" id="move-modal-text"></p>
+        <select id="move-group-select" class="form-input" style="margin-bottom:16px; background:#111; color:#fff; padding:12px; width:100%; border:1px solid #333; border-radius:8px;">
+        </select>
+        <div style="display:flex; gap:12px">
+          <button class="btn btn-ghost" onclick="closeMoveModal()" style="flex:1">Cancelar</button>
+          <button class="btn btn-primary" onclick="confirmMoveSubarea()" style="flex:1">Confirmar</button>
+        </div>
+      </div>
     </div>`;
 
   const phase = getPhase();
-  const [posAreas, allAreas] = await Promise.all([
+  const [groups, posAreas, allAreas] = await Promise.all([
+    API.get(`/api/aircraft/${aircraftId}/pos/${position}/groups`).catch(() => []),
     API.get(`/api/aircraft/${aircraftId}/pos/${position}/areas?phase=${encodeURIComponent(phase)}`).catch(() => []),
     API.get('/api/areas').catch(() => []),
   ]);
 
+  window._currentPositionGroups = groups;
+  window._currentAircraftId = aircraftId;
+  window._currentPosition = position;
+
+  const groupedAreaIds = new Set();
+  groups.forEach(g => {
+    g.subareas.forEach(sa => groupedAreaIds.add(sa.id));
+  });
+
   const withPhotos = new Set(posAreas.map(a => a.area_id));
-  const grid = document.getElementById('pos-areas');
-  if (!allAreas.length) {
-    grid.innerHTML = `<div class="no-mask-banner">Crie modelos globais na tela inicial.</div>`;
-    return;
+
+  // Render Groups
+  const groupsGrid = document.getElementById('pos-groups');
+  if (!groups.length) {
+    groupsGrid.innerHTML = `<div class="no-mask-banner" style="grid-column: 1/-1;">Nenhuma área criada.</div>`;
+  } else {
+    groupsGrid.innerHTML = groups.map(g => `
+      <div class="card" onclick="go('/aircraft/${aircraftId}/pos/${position}/group/${g.id}')">
+        <span class="card-icon">📁</span>
+        <div class="card-body">
+          <div class="card-title">${esc(g.name)}</div>
+          <div class="card-sub">${g.subareas.length} sub-áreas</div>
+        </div>
+        <span style="color:var(--muted);font-size:1.2rem">›</span>
+      </div>`).join('');
   }
-  grid.innerHTML = allAreas.map(a => `
-    <div class="card" onclick="go('/aircraft/${aircraftId}/pos/${position}/area/${a.id}')">
-      ${a.mask_thumb ? `<img class="card-thumb" src="${a.mask_thumb}">` : `<span class="card-icon">📐</span>`}
-      <div class="card-body">
-        <div class="card-title">${esc(a.name)}</div>
-        <div class="card-sub">${withPhotos.has(a.id) ? '✅ Com fotos' : '📸 Sem fotos'}</div>
-      </div>
-      <span style="color:var(--muted);font-size:1.2rem">›</span>
-    </div>`).join('');
+
+  // Render Ungrouped Areas
+  const freeAreas = allAreas.filter(a => !groupedAreaIds.has(a.id));
+  const grid = document.getElementById('pos-areas');
+  if (!freeAreas.length) {
+    grid.innerHTML = `<div class="no-mask-banner" style="grid-column: 1/-1;">Todas as sub-áreas estão agrupadas.</div>`;
+  } else {
+    grid.innerHTML = freeAreas.map(a => `
+      <div class="card">
+        <div style="display:flex; flex:1; align-items:center;" onclick="go('/aircraft/${aircraftId}/pos/${position}/area/${a.id}')">
+          ${a.mask_thumb ? `<img class="card-thumb" src="${a.mask_thumb}">` : `<span class="card-icon">📐</span>`}
+          <div class="card-body">
+            <div class="card-title">${esc(a.name)}</div>
+            <div class="card-sub">${withPhotos.has(a.id) ? '✅ Com fotos' : '📸 Sem fotos'}</div>
+          </div>
+        </div>
+        ${groups.length > 0 ? `<button class="btn-icon" style="background:#222; padding:8px; border-radius:6px; font-size:0.8rem; margin-left:8px;" onclick="openMoveModal(${a.id}, '${esc(a.name)}')">Mover</button>` : ''}
+      </div>`).join('');
+  }
+}
+
+async function createNewGroup(aircraftId, position) {
+  const name = prompt("Nome da Nova Área (ex: Cockpit):");
+  if (!name || !name.trim()) return;
+  try {
+    await API.post(`/api/aircraft/${aircraftId}/pos/${position}/groups`, { name: name.trim() });
+    renderPositionDetail(document.getElementById('app'), aircraftId, position);
+  } catch(e) {}
+}
+
+let _moveToAreaId = null;
+function openMoveModal(areaId, areaName) {
+  _moveToAreaId = areaId;
+  const groups = window._currentPositionGroups || [];
+  document.getElementById('move-modal-text').textContent = `Selecione a área de destino para "${areaName}":`;
+  const select = document.getElementById('move-group-select');
+  select.innerHTML = groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
+  document.getElementById('move-modal').style.display = 'flex';
+}
+function closeMoveModal() {
+  document.getElementById('move-modal').style.display = 'none';
+  _moveToAreaId = null;
+}
+async function confirmMoveSubarea() {
+  if (!_moveToAreaId) return;
+  const groupId = document.getElementById('move-group-select').value;
+  if (!groupId) return;
+  try {
+    await API.post(`/api/groups/${groupId}/subareas`, { area_id: _moveToAreaId });
+    closeMoveModal();
+    renderPositionDetail(document.getElementById('app'), window._currentAircraftId, window._currentPosition);
+  } catch(e) {}
+}
+
+async function renderGroupDetail(app, aircraftId, position, groupId) {
+  const phase = getPhase();
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/aircraft/${aircraftId}/pos/${position}')">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
+      <h1>Carregando...</h1>
+    </div>
+    <div class="view">
+      <div id="group-areas" class="cards-grid"><div class="spinner"></div></div>
+    </div>`;
+
+  const [groups, posAreas] = await Promise.all([
+    API.get(`/api/aircraft/${aircraftId}/pos/${position}/groups`).catch(() => []),
+    API.get(`/api/aircraft/${aircraftId}/pos/${position}/areas?phase=${encodeURIComponent(phase)}`).catch(() => []),
+  ]);
+
+  const group = groups.find(g => g.id == groupId);
+  if (!group) { go(`/aircraft/${aircraftId}/pos/${position}`); return; }
+
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/aircraft/${aircraftId}/pos/${position}')">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
+      <h1>${esc(group.name)}</h1>
+    </div>
+    <div class="view">
+      <div class="section-label">Sub-áreas em ${esc(group.name)}</div>
+      <div id="group-areas" class="cards-grid"></div>
+    </div>`;
+
+  const withPhotos = new Set(posAreas.map(a => a.area_id));
+  const grid = document.getElementById('group-areas');
+
+  if (!group.subareas.length) {
+    grid.innerHTML = `<div class="no-mask-banner" style="grid-column: 1/-1;">Nenhuma sub-área nesta área. Mova-as através da tela da Posição.</div>`;
+  } else {
+    grid.innerHTML = group.subareas.map(a => `
+      <div class="card">
+        <div style="display:flex; flex:1; align-items:center;" onclick="go('/aircraft/${aircraftId}/pos/${position}/area/${a.id}')">
+          ${a.mask_thumb ? `<img class="card-thumb" src="${a.mask_thumb}">` : `<span class="card-icon">📐</span>`}
+          <div class="card-body">
+            <div class="card-title">${esc(a.name)}</div>
+            <div class="card-sub">${withPhotos.has(a.id) ? '✅ Com fotos' : '📸 Sem fotos'}</div>
+          </div>
+        </div>
+        <button class="btn-icon" style="background:var(--danger); color:#fff; padding:8px; border-radius:6px; font-size:0.8rem; margin-left:8px;" onclick="removeSubareaFromGroup(${groupId}, ${a.id})">Remover</button>
+      </div>`).join('');
+  }
+}
+
+async function removeSubareaFromGroup(groupId, areaId) {
+  if (!confirm('Deseja retirar esta sub-área desta pasta? (As fotos não serão apagadas)')) return;
+  try {
+    await API.del(`/api/groups/${groupId}/subareas/${areaId}`);
+    route();
+  } catch(e) {}
 }
 
 async function analyzePosition(aircraftId, position) {
