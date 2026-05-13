@@ -851,7 +851,16 @@ async function renderAreaDetail(app, templateId, aircraftId, position) {
       <h1>${esc(ac.serial)}${position ? ' | '+position : ''}</h1>
     </div>
     <div class="view">
-      <div class="section-label">Área: ${esc(data.name)}</div>
+      <div class="section-label">Padrão Global: ${esc(data.name)}</div>
+      ${data.mask_thumb ? `
+      <div style="margin-bottom:20px; border-radius:16px; overflow:hidden; border:1px solid rgba(255,255,255,0.1); background:#000;">
+        <img src="${data.mask_thumb}" style="width:100%; height:auto; display:block; opacity:0.8;">
+        <div style="padding:10px; background:rgba(255,255,255,0.05); text-align:center; font-size:0.75rem; color:var(--muted);">
+          Utilize esta imagem como referência para o enquadramento.
+        </div>
+      </div>` : ''}
+
+      <div class="section-label">Inspeção da Aeronave</div>
       <div class="action-grid" style="position:relative">
         ${photoCard('before', photos.before)}
         ${photoCard('after', photos.after)}

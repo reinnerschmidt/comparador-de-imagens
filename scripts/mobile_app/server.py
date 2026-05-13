@@ -1232,15 +1232,23 @@ def ai_query():
     SQL:"""
 
     try:
-        # Nomes de modelos sem prefixo 'models/' costumam ser mais compatíveis em certas regiões
-        model_name = 'gemini-1.5-flash'
-        try:
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(schema_prompt)
-        except Exception as flash_err:
-            print(f"⚠️ Gemini Flash falhou, tentando Pro: {flash_err}")
-            model = genai.GenerativeModel('gemini-1.5-pro')
-            response = model.generate_content(schema_prompt)
+        # Tenta uma sequência de nomes para máxima compatibilidade
+        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        response = None
+        model = None
+        
+        for m_name in model_names:
+            try:
+                print(f"DEBUG: Tentando Gemini modelo {m_name}...")
+                model = genai.GenerativeModel(m_name)
+                response = model.generate_content(schema_prompt)
+                if response: break
+            except Exception as e:
+                print(f"⚠️ Erro com {m_name}: {e}")
+                continue
+        
+        if not response:
+            return jsonify({"error": "Nenhum modelo Gemini disponível no momento."}), 500
             
         sql_query = response.text.strip().replace('```sql', '').replace('```', '').strip()
 
