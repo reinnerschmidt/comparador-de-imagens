@@ -74,71 +74,128 @@ function route() {
    HOME — Lista de aeronaves + Modelos Globais
 ════════════════════════════════════════════ */
 function getPhase() {
-  return localStorage.getItem('phase') || 'Recebimento';
-}
-
-function setPhase(phase) {
-  localStorage.setItem('phase', phase);
-  go('/aircrafts');
-}
-
-function toggleIffMenu() {
-  const menu = document.getElementById('iff-menu');
-  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  return localStorage.getItem('insp_phase') || 'Recebimento';
 }
 
 async function renderHome(app) {
   app.innerHTML = `
     <div class="app-header">
-      <a class="header-logo" href="#/">
-        <img src="/static/embraer-logo.svg" alt="Embraer">
-      </a>
+      <div style="flex:1"></div>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div style="flex:1"></div>
+    </div>
+    <div class="view" style="padding-top: 24px">
+      <!-- Seção IA Insights -->
+      <div class="ai-insight-box">
+        <div class="section-label" style="margin-top:0">AeroInspect Intelligence</div>
+        <div class="ai-input-wrapper">
+          <input id="ai-question" class="ai-input" placeholder="Pergunte algo sobre as inspeções...">
+          <button class="ai-btn" onclick="askAI()">✨</button>
+        </div>
+        <div id="ai-answer" class="ai-answer-area" style="display:none">
+          <div class="typing-container"><div class="spinner-small"></div> Analisando dados...</div>
+        </div>
+      </div>
+
+      <!-- Ação Principal -->
+      <button class="btn btn-primary btn-hero" onclick="renderInspectionModeSelection(document.getElementById('app'))" style="margin-top:32px">
+        <span style="font-size:1.4rem">🛩️</span>
+        <div style="text-align:left">
+          <div style="font-size:1.1rem">Sistema de Inspeção</div>
+          <div style="font-size:0.75rem; font-weight:400; opacity:0.8">Iniciar nova verificação ou ver resultados</div>
+        </div>
+      </button>
+
+      <div class="divider" style="margin:40px 0"></div>
+
+      <!-- Gestão Rápida -->
+      <div class="section-label">Gestão de Modelos e Áreas</div>
+      <div class="cards-grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="card" onclick="go('/aircrafts')" style="flex-direction:column; padding:20px; text-align:center; gap:8px">
+          <span style="font-size:1.8rem">📦</span>
+          <div class="card-title">Aeronaves</div>
+        </div>
+        <div class="card" onclick="go('/global-area/new')" style="flex-direction:column; padding:20px; text-align:center; gap:8px">
+          <span style="font-size:1.8rem">📂</span>
+          <div class="card-title">Global Areas</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function renderInspectionModeSelection(app) {
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/')">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
       <div class="header-logo-divider"></div>
-      <h1>Gestão de Inspeção Visual</h1>
+      <h1>Sistema de Inspeção</h1>
     </div>
-    <div class="view" style="display:flex;flex-direction:column;gap:16px;padding-top:24px;">
+    <div class="view">
+      <div class="section-label">Selecione a fase da inspeção</div>
       
-      <div class="card" onclick="setPhase('Recebimento')" style="padding:16px;align-items:center;">
-        <img src="/static/icons/icon_recebimento.png" style="width:48px;height:48px;border-radius:8px;margin-right:16px;">
-        <div class="card-body">
-          <div class="card-title" style="font-size:1.1rem;">Recebimento</div>
-          <div class="card-sub">Inspeção de chegada</div>
-        </div>
-        <span style="color:var(--muted);font-size:1.5rem">›</span>
-      </div>
+      <button class="btn btn-primary action-card-big before" onclick="setPhaseAndGo('Recebimento')">
+        <div class="ac-icon">📥</div>
+        <div class="ac-label">Recebimento</div>
+        <div class="ac-sub">Primeira verificação da aeronave</div>
+      </button>
 
-      <div class="card" onclick="setPhase('IFP')" style="padding:16px;align-items:center;">
-        <img src="/static/icons/icon_ifp.png" style="width:48px;height:48px;border-radius:8px;margin-right:16px;">
-        <div class="card-body">
-          <div class="card-title" style="font-size:1.1rem;">IFP</div>
-          <div class="card-sub">Inspeção Final da Produção</div>
-        </div>
-        <span style="color:var(--muted);font-size:1.5rem">›</span>
-      </div>
+      <button class="btn btn-primary action-card-big" style="background:#222; border:1px solid var(--border)" onclick="setPhaseAndGo('IFP')">
+        <div class="ac-icon">🔍</div>
+        <div class="ac-label">IFP (Intermediária)</div>
+        <div class="ac-sub">Inspeção durante o processo</div>
+      </button>
 
-      <div class="card" onclick="toggleIffMenu()" style="padding:16px;align-items:center;background:var(--card-bg);">
-        <img src="/static/icons/icon_iff_producao.png" style="width:48px;height:48px;border-radius:8px;margin-right:16px;">
-        <div class="card-body">
-          <div class="card-title" style="font-size:1.1rem;">IFF</div>
-          <div class="card-sub">Inspeção Final de Fabricação</div>
-        </div>
-        <span style="color:var(--muted);font-size:1.5rem">▾</span>
-      </div>
-      
-      <div id="iff-menu" style="display:none;margin-left:32px;margin-top:-8px;border-left:2px solid var(--border);padding-left:16px;display:flex;flex-direction:column;gap:8px;">
-        <div class="card" onclick="setPhase('IFF - Qualidade')" style="padding:12px;background:rgba(255,255,255,0.02)">
-          <img src="/static/icons/icon_iff_qualidade.png" style="width:32px;height:32px;border-radius:6px;margin-right:12px;">
-          <div class="card-body"><div class="card-title">Qualidade (QA)</div></div>
-        </div>
-        <div class="card" onclick="setPhase('IFF - Produção')" style="padding:12px;background:rgba(255,255,255,0.02)">
-          <img src="/static/icons/icon_iff_producao.png" style="width:32px;height:32px;border-radius:6px;margin-right:12px;">
-          <div class="card-body"><div class="card-title">Produção</div></div>
-        </div>
-      </div>
+      <button class="btn btn-primary action-card-big after" onclick="setPhaseAndGo('IFF')">
+        <div class="ac-icon">📤</div>
+        <div class="ac-label">IFF (Final)</div>
+        <div class="ac-sub">Verificação final antes da entrega</div>
+      </button>
+    </div>`;
+}
 
-    </div>
-  `;
-  document.getElementById('iff-menu').style.display = 'none'; // reset menu state
+function setPhaseAndGo(phase) {
+  localStorage.setItem('insp_phase', phase);
+  go('/aircrafts');
+}
+
+async function askAI() {
+  const input = document.getElementById('ai-question');
+  const answerArea = document.getElementById('ai-answer');
+  const question = input.value.trim();
+  
+  if (!question) return;
+  
+  answerArea.style.display = 'block';
+  answerArea.innerHTML = `<div class="typing-container"><div class="spinner-small"></div> Analisando dados...</div>`;
+  input.disabled = true;
+
+  try {
+    const res = await API.post('/api/ai/query', { question });
+    if (res.error) throw new Error(res.error);
+    
+    // Efeito de digitação
+    answerArea.innerHTML = '';
+    const text = res.answer;
+    let i = 0;
+    const speed = 15;
+    
+    function typeWriter() {
+      if (i < text.length) {
+        answerArea.innerHTML += text.charAt(i);
+        i++;
+        setTimeout(typeWriter, speed);
+      } else {
+        input.disabled = false;
+        input.value = '';
+      }
+    }
+    typeWriter();
+
+  } catch (err) {
+    answerArea.innerHTML = `<div style="color:var(--danger)">Erro: ${err.message}</div>`;
+    input.disabled = false;
+  }
 }
 
 /* ════════════════════════════════════════════

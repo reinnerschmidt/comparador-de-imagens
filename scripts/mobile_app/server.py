@@ -16,6 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+import google.generativeai as genai
 from flask import Flask, jsonify, request, send_from_directory
 
 # ─── Paths ───────────────────────────────────────────────────────────────────
@@ -1109,6 +1110,77 @@ def list_feedback(analysis_id: int):
             (analysis_id,),
         )
     return jsonify(rows)
+
+
+# ─── AI Insights (Gemini) ───────────────────────────────────────────────────
+
+# Configuração do Gemini
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+@app.route("/api/ai/query", methods=["POST"])
+def ai_query():
+    if not GEMINI_API_KEY:
+        return jsonify({"error": "Chave GEMINI_API_KEY não configurada no servidor."}), 500
+
+    data = request.get_json(force=True)
+    question = data.get("question")
+    if not question:
+        return jsonify({"error": "Pergunta não informada"}), 400
+
+    # 1. Preparar o prompt com o esquema para gerar SQL
+    schema_prompt = f"""
+    Você é um analista de dados especialista em inspeção de aeronaves.
+    O banco de dados (SQLite) tem o seguinte esquema:
+    {SCHEMA_SQLITE}
+
+    Instruções:
+    - O usuário fará uma pergunta sobre os dados de inspeção.
+    - Gere APENAS uma query SQL 'SELECT' válida para responder à pergunta.
+    - Não use comandos como DELETE, DROP, UPDATE ou INSERT.
+    - Retorne apenas o código SQL, sem explicações ou markdown.
+    - Se a pergunta não puder ser respondida com os dados, retorne 'ERROR: Não consigo responder isso.'.
+
+    Pergunta do usuário: {question}
+    SQL:"""
+
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        response = model.generate_content(schema_prompt)
+        sql_query = response.text.strip().replace('```sql', '').replace('```', '').strip()
+
+        if sql_query.startswith("ERROR"):
+            return jsonify({"answer": "Desculpe, não encontrei dados suficientes para responder a essa pergunta."})
+
+        # Segurança: Validar se é apenas SELECT
+        if not sql_query.lower().startswith("select"):
+            return jsonify({"error": "A IA gerou uma query inválida ou perigosa."}), 500
+
+        # 2. Executar a query
+        with db_conn() as conn:
+            results = fetchall(conn, sql_query)
+
+        # 3. Formatar a resposta final em texto
+        format_prompt = f"""
+        Com base na pergunta do usuário: "{question}"
+        E nos resultados brutos do banco de dados: {results}
+        
+        Escreva uma resposta curta, direta e profissional em português para o inspetor de aeronaves.
+        No final, SEMPRE adicione exatamente a frase: "Você deseja que eu gere um gráfico sobre?"
+        """
+        
+        final_response = model.generate_content(format_prompt)
+        answer_text = final_response.text.strip()
+
+        return jsonify({
+            "answer": answer_text,
+            "sql": sql_query if app.debug else None
+        })
+
+    except Exception as e:
+        print(f"Erro AI Query: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 # ─── Entry ────────────────────────────────────────────────────────────────────
