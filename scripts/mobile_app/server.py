@@ -1232,8 +1232,8 @@ def ai_query():
     SQL:"""
 
     try:
-        # Tenta uma sequência de nomes para máxima compatibilidade
-        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        # Tenta uma sequência de nomes para máxima compatibilidade (Sync com financas-bot-saas)
+        model_names = ['gemini-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
         response = None
         model = None
         
