@@ -243,9 +243,15 @@ async function renderAircraftList(app) {
   } else {
     acList.innerHTML = aircraft.map(a => `
       <div class="card" onclick="go('/aircraft/${a.id}')">
-        <span class="card-icon">🛩️</span>
+        <span class="card-icon" style="position:relative">
+          🛩️
+          ${a.has_alert ? `<span style="position:absolute; bottom:-5px; right:-5px; font-size:1rem">⚠️</span>` : ''}
+        </span>
         <div class="card-body">
           <div class="card-title">${esc(a.serial)}</div>
+          <div class="card-sub" style="font-size:0.75rem; color:var(--muted)">
+            Áreas: ${a.inspected_areas || 0} | Danos: ${a.total_damages || 0}
+          </div>
         </div>
         <span style="color:var(--muted);font-size:1.2rem">›</span>
       </div>`).join('');
@@ -429,17 +435,30 @@ async function renderAircraftDetail(app, id) {
       </div>
     </div>`;
 
-  const aircraft = await API.get('/api/aircraft').then(list => list.find(a => a.id == id) || {});
+  const [aircraft, stats] = await Promise.all([
+    API.get('/api/aircraft').then(list => list.find(a => a.id == id) || {}),
+    API.get(`/api/aircraft/${id}/stats`).catch(() => ({}))
+  ]);
+  
   document.getElementById('ac-title').textContent = aircraft.serial || '—';
 
-  document.getElementById('pos-grid').innerHTML = POSITIONS.map(pos => `
+  document.getElementById('pos-grid').innerHTML = POSITIONS.map(pos => {
+    const s = stats[pos] || { inspected_areas: 0, total_damages: 0, has_alert: false };
+    return `
     <div class="card" onclick="go('/aircraft/${id}/pos/${pos}')">
-      <span class="card-icon" style="font-size:1.1rem;font-weight:700;color:var(--accent)">${pos}</span>
+      <span class="card-icon" style="font-size:1.1rem;font-weight:700;color:var(--accent);position:relative">
+        ${pos}
+        ${s.has_alert ? `<span style="position:absolute; bottom:-12px; right:-8px; font-size:0.9rem">⚠️</span>` : ''}
+      </span>
       <div class="card-body">
         <div class="card-title">Posição ${pos}</div>
+        <div class="card-sub" style="font-size:0.75rem; color:var(--muted)">
+          Áreas: ${s.inspected_areas} | Danos: ${s.total_damages}
+        </div>
       </div>
       <span style="color:var(--muted);font-size:1.2rem">›</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function analyzeAircraft(id) {
@@ -706,17 +725,26 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
   if (!photo) { go(backUrl); return; }
 
   const ts = photo.captured_at ? new Date(photo.captured_at.replace(' ','T')+'Z').toLocaleString('pt-BR') : '';
+  const dmgStatus = photo.has_damage_check === 2 ? '<span style="color:#ff3333;font-weight:bold">⚠️ Dano Identificado</span>' : 
+                   photo.has_damage_check === 1 ? '<span style="color:#00c853;font-weight:bold">✅ Sem Dano</span>' : 
+                   '<span style="color:var(--muted)">Pendente</span>';
+
   app.innerHTML = `
     <div class="app-header">
       <button class="btn-icon" onclick="go('${backUrl}')">‹</button>
       <h1>${label}</h1>
+      <a href="${photo.url}" download="${label}_${aircraftId}.jpg" class="btn-icon" style="font-size:1.4rem">📥</a>
     </div>
-    <div style="background:#000;width:100%;min-height:55vh;display:flex;align-items:center;justify-content:center">
-      <img src="${photo.url}" style="max-width:100%;max-height:65vh;object-fit:contain">
+    <div style="background:#000;width:100%;min-height:55vh;display:flex;align-items:center;justify-content:center;overflow:auto">
+      <a href="${photo.url}" target="_blank" title="Clique para ver resolução original">
+        <img src="${photo.url}" style="max-width:100%; max-height:85vh; display:block; margin:auto">
+      </a>
     </div>
-    <div class="view">
-      <p style="color:var(--muted);text-align:center;font-size:0.82rem;margin-bottom:16px">${ts}</p>
+    <div class="view" style="text-align:center">
+      <div style="margin-bottom:12px; font-size:1rem">${dmgStatus}</div>
+      <p style="color:var(--muted); font-size:0.82rem; margin-bottom:20px">${ts}</p>
       <button class="btn btn-primary" onclick="go('${retakeUrl}')"> 📷 Tirar novamente</button>
+      <p style="font-size:0.7rem; color:var(--muted); margin-top:12px">Dica: Toque na imagem para ver em resolução original.</p>
     </div>`;
 }
 
@@ -1178,13 +1206,18 @@ function renderCropEditor(dataUrl, fileName) {
       <span style="color:#fff; font-size:0.9rem; flex:1;">Selecione a área a analisar</span>
     </div>
     <div class="camera-bottom-bar" style="position:absolute; bottom:0; left:0; right:0; z-index:20; display:flex; flex-direction:column; gap:12px; padding: 16px 24px calc(16px + env(safe-area-inset-bottom, 16px)); background:linear-gradient(to top,rgba(0,0,0,.85),transparent);">
-      <label style="color:#fff; font-size:1rem; display:flex; align-items:center; gap:8px; justify-content:center;">
-        <input type="checkbox" id="crop-has-damage" style="width:20px;height:20px;">
-        Esta foto apresenta dano
-      </label>
+      <div style="color:#fff; font-size:0.9rem; text-align:center; font-weight:bold; margin-bottom:4px">Existe dano nesta área?</div>
+      <div style="display:flex; gap:12px; justify-content:center; margin-bottom:8px;">
+        <label class="check-opt">
+          <input type="radio" name="damage-check" value="1" onchange="updateConfirmBtn()"> Não
+        </label>
+        <label class="check-opt">
+          <input type="radio" name="damage-check" value="2" onchange="updateConfirmBtn()"> Sim
+        </label>
+      </div>
       <div style="display:flex; gap:16px; justify-content:center;">
         <button class="btn btn-ghost" onclick="resetCrop()" style="flex:0 1 140px;">🔄 Refazer</button>
-        <button class="btn btn-primary" onclick="confirmCrop()" style="flex:0 1 180px;">✓ Confirmar</button>
+        <button class="btn btn-primary" id="btn-confirm-crop" onclick="confirmCrop()" style="flex:0 1 180px;" disabled>✓ Confirmar</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -1329,18 +1362,25 @@ async function confirmCrop() {
     }
   }
 
-  const hasDamage = document.getElementById('crop-has-damage')?.checked;
-  if (hasDamage) {
+  const checkOpt = document.querySelector('input[name="damage-check"]:checked');
+  if (!checkOpt) {
+    toast('Selecione se existe dano ou não', 'err');
+    return;
+  }
+  const hasDamageVal = parseInt(checkOpt.value); // 1=Não, 2=Sim
+
+  if (hasDamageVal === 2) {
     document.getElementById('crop-overlay').style.display = 'none';
     renderDamageMarker(dataUrl, aircraftId, areaId, mode, position);
     return;
   }
 
   if (aircraftId && areaId && mode) {
-    const btn = document.querySelector('#crop-overlay .btn-primary');
+    const btn = document.getElementById('btn-confirm-crop');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
     try {
-      await uploadPhotoData(aircraftId, areaId, mode, position, dataUrl, false, []);
+      // has_damage_check = 1 (Não)
+      await uploadPhotoData(aircraftId, areaId, mode, position, dataUrl, false, [], 1);
       window._captureCtx = null;
       document.getElementById('crop-overlay')?.remove();
       history.back();
@@ -1348,6 +1388,11 @@ async function confirmCrop() {
       if (btn) { btn.disabled = false; btn.textContent = '✓ Confirmar'; }
     }
   }
+}
+
+function updateConfirmBtn() {
+  const btn = document.getElementById('btn-confirm-crop');
+  if (btn) btn.disabled = false;
 }
 
 // -- Damage Marker --
@@ -1458,17 +1503,18 @@ window.confirmDamageMarker = async function(aircraftId, areaId, mode, position, 
   const btn = document.querySelector('#damage-overlay .btn-primary');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
   try {
-    await uploadPhotoData(aircraftId, areaId, mode, position, dataUrl, true, _damageRegions);
+    // has_damage_check = 2 (Sim)
+    await uploadPhotoData(aircraftId, areaId, mode, position, dataUrl, true, _damageRegions, 2);
     document.getElementById('damage-overlay')?.remove();
     document.getElementById('crop-overlay')?.remove();
     window._captureCtx = null;
     history.back();
   } catch(e) {
-    if (btn) { btn.disabled = false; btn.textContent = '✓ Enviar'; }
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Finalizar'; }
   }
 }
 
-async function uploadPhotoData(aircraftId, areaId, mode, position, dataUrl, hasDamage, damageRegions) {
+async function uploadPhotoData(aircraftId, areaId, mode, position, dataUrl, hasDamage, damageRegions, damageCheck = 0) {
   await API.post('/api/photos/upload', {
     aircraft_id: parseInt(aircraftId),
     area_id:     parseInt(areaId),
@@ -1477,6 +1523,7 @@ async function uploadPhotoData(aircraftId, areaId, mode, position, dataUrl, hasD
     phase:       getPhase(),
     image:       dataUrl,
     has_manual_damage: hasDamage,
+    has_damage_check: damageCheck,
     damage_regions: damageRegions
   });
   toast('✅ Foto enviada!', 'ok');

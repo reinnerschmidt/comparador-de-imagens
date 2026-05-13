@@ -586,3 +586,25 @@ html, body {
 
   .view { padding: 36px 48px; }
 }
+
+.check-opt {
+  background: rgba(255,255,255,0.1);
+  padding: 12px 20px;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255,255,255,0.2);
+  transition: all 0.2s;
+}
+.check-opt input[type="radio"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+}
+.check-opt:has(input:checked) {
+  background: rgba(88,166,255,0.2);
+  border-color: var(--primary);
+}

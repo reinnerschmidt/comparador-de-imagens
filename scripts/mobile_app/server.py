@@ -129,6 +129,7 @@ SCHEMA_SQLITE = """
         file_path   TEXT NOT NULL,
         captured_at TEXT DEFAULT (datetime('now')),
         has_manual_damage INTEGER DEFAULT 0,
+        has_damage_check INTEGER DEFAULT 0, -- 0=Pendente, 1=Sem Dano, 2=Com Dano
         manual_damage_regions TEXT
     );
     CREATE TABLE IF NOT EXISTS analyses (
@@ -200,6 +201,7 @@ SCHEMA_PG = """
         file_path   TEXT NOT NULL,
         captured_at TIMESTAMPTZ DEFAULT NOW(),
         has_manual_damage BOOLEAN DEFAULT FALSE,
+        has_damage_check INTEGER DEFAULT 0, -- 0=Pendente, 1=Sem Dano, 2=Com Dano
         manual_damage_regions TEXT
     );
     CREATE TABLE IF NOT EXISTS analyses (
@@ -249,6 +251,18 @@ SCHEMA_PG = """
 def init_db() -> None:
     with db_conn() as conn:
         cur = conn.cursor()
+        cur.execute(SCHEMA_SQLITE if not DB_URL else SCHEMA_PG)
+        
+        # Migração: Adicionar has_damage_check se não existir
+        try:
+            if not DB_URL:
+                cur.execute("ALTER TABLE inspection_photos ADD COLUMN has_damage_check INTEGER DEFAULT 0")
+            else:
+                cur.execute("ALTER TABLE inspection_photos ADD COLUMN IF NOT EXISTS has_damage_check INTEGER DEFAULT 0")
+        except:
+            pass # Já existe
+        
+        conn.commit()
         # Migração legada: remove tabela areas com aircraft_id
         try:
             cur.execute("SELECT aircraft_id FROM areas LIMIT 1")
@@ -341,8 +355,65 @@ def serve(path: str):
 @app.route("/api/aircraft")
 def list_aircraft():
     with db_conn() as conn:
-        rows = fetchall(conn, "SELECT id, serial, name, created FROM aircraft ORDER BY created DESC")
-    return jsonify(rows)
+        aircraft = fetchall(conn, "SELECT id, serial, name, created FROM aircraft ORDER BY created DESC")
+        
+        # Adicionar estatísticas para cada aeronave
+        for ac in aircraft:
+            aid = ac["id"]
+            
+            # Áreas inspecionadas (total único de sub-áreas com foto)
+            inspected = fetchone(conn, 
+                f"SELECT COUNT(DISTINCT area_id) as count FROM inspection_photos WHERE aircraft_id = {PH}", (aid,))
+            ac["inspected_areas"] = inspected["count"] if inspected else 0
+            
+            # Total de danos (IA + Manual)
+            # 1. Danos detectados pela IA
+            ai_damages = fetchone(conn,
+                f"SELECT COUNT(*) as count FROM analyses WHERE aircraft_id = {PH} AND status = 'Dano Detectado'", (aid,))
+            
+            # 2. Danos marcados manualmente (has_damage_check = 2)
+            manual_damages = fetchone(conn,
+                f"SELECT COUNT(*) as count FROM inspection_photos WHERE aircraft_id = {PH} AND has_damage_check = 2", (aid,))
+            
+            ac["total_damages"] = (ai_damages["count"] or 0) + (manual_damages["count"] or 0)
+            ac["has_alert"] = ac["total_damages"] > 0
+            
+    return jsonify(aircraft)
+
+
+@app.route("/api/aircraft/<int:aid>/stats")
+def aircraft_stats(aid: int):
+    """Retorna estatísticas detalhadas por posição para uma aeronave."""
+    with db_conn() as conn:
+        # Posições fixas (poderia vir de uma constante compartilhada)
+        positions = ['P4', 'P3', 'P2', 'P1', 'P0', 'F30']
+        stats = {}
+        
+        for pos in positions:
+            # Áreas inspecionadas na posição
+            inspected = fetchone(conn,
+                f"SELECT COUNT(DISTINCT area_id) as count FROM inspection_photos WHERE aircraft_id = {PH} AND position = {PH}", 
+                (aid, pos))
+            
+            # Danos na posição (IA)
+            ai_damages = fetchone(conn,
+                f"SELECT COUNT(*) as count FROM analyses WHERE aircraft_id = {PH} AND position = {PH} AND status = 'Dano Detectado'",
+                (aid, pos))
+            
+            # Danos na posição (Manual)
+            manual_damages = fetchone(conn,
+                f"SELECT COUNT(*) as count FROM inspection_photos WHERE aircraft_id = {PH} AND position = {PH} AND has_damage_check = 2",
+                (aid, pos))
+            
+            total_damages = (ai_damages["count"] or 0) + (manual_damages["count"] or 0)
+            
+            stats[pos] = {
+                "inspected_areas": inspected["count"] or 0,
+                "total_damages": total_damages,
+                "has_alert": total_damages > 0
+            }
+            
+    return jsonify(stats)
 
 
 @app.route("/api/aircraft", methods=["POST"])
@@ -1146,14 +1217,14 @@ def ai_query():
     SQL:"""
 
     try:
-        # Tenta usar o flash primeiro (mais rápido), com fallback para o pro
-        model_name = 'models/gemini-1.5-flash'
+        # Nomes de modelos sem prefixo 'models/' costumam ser mais compatíveis em certas regiões
+        model_name = 'gemini-1.5-flash'
         try:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(schema_prompt)
         except Exception as flash_err:
             print(f"⚠️ Gemini Flash falhou, tentando Pro: {flash_err}")
-            model = genai.GenerativeModel('models/gemini-1.5-pro')
+            model = genai.GenerativeModel('gemini-1.5-pro')
             response = model.generate_content(schema_prompt)
             
         sql_query = response.text.strip().replace('```sql', '').replace('```', '').strip()
