@@ -1216,16 +1216,21 @@ def ai_query():
         return jsonify({"error": "Pergunta não informada"}), 400
 
     # 1. Preparar o prompt com o esquema para gerar SQL
+    current_schema = SCHEMA_PG if IS_POSTGRES else SCHEMA_SQLITE
+    db_engine = "PostgreSQL" if IS_POSTGRES else "SQLite"
+
     schema_prompt = f"""
     Você é um analista de dados especialista em inspeção de aeronaves.
-    O banco de dados (SQLite) tem o seguinte esquema:
-    {SCHEMA_SQLITE}
+    O banco de dados ({db_engine}) tem o seguinte esquema:
+    {current_schema}
 
     Instruções:
     - O usuário fará uma pergunta sobre os dados de inspeção.
     - Gere APENAS uma query SQL 'SELECT' válida para responder à pergunta.
     - Não use comandos como DELETE, DROP, UPDATE ou INSERT.
     - Retorne apenas o código SQL, sem explicações ou markdown.
+    - MUITO IMPORTANTE ({db_engine}): No Postgres, booleanos são TRUE/FALSE e inteiros são números. 
+      Certifique-se de que comparações como 'has_manual_damage = TRUE' ou 'has_damage_check = 2' estejam corretas para os tipos definidos no esquema.
     - Se a pergunta não puder ser respondida com os dados, retorne 'ERROR: Não consigo responder isso.'.
 
     Pergunta do usuário: {question}
