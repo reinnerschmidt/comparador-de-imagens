@@ -36,6 +36,16 @@ function toast(msg, type='') {
 /* ── Router ── */
 function go(hash) { location.hash = hash; }
 
+function fmtDate(s) {
+  if (!s) return '';
+  try {
+    // Tenta parsear formatos ISO ou SQLite
+    const d = new Date(s.replace(' ','T').replace(/\.\d+$/,'') + (s.includes('Z') || s.includes('-') ? '' : 'Z'));
+    if (isNaN(d.getTime())) return s; // Retorna original se falhar
+    return d.toLocaleString('pt-BR');
+  } catch(e) { return s; }
+}
+
 window.addEventListener('hashchange', route);
 window.addEventListener('load', route);
 
@@ -699,6 +709,7 @@ async function analyzePosition(aircraftId, position) {
   }
 }
 
+
 /* ════════════════════════════════════════════
    VISUALIZADOR DE FOTO
 ════════════════════════════════════════════ */
@@ -723,8 +734,9 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
   const photo = mode === 'before' ? photos.before : photos.after;
 
   if (!photo) { go(backUrl); return; }
+  window._currentPhotoId = photo.id;
 
-  const ts = photo.captured_at ? new Date(photo.captured_at.replace(' ','T')+'Z').toLocaleString('pt-BR') : '';
+  const ts = fmtDate(photo.captured_at);
   const dmgStatus = photo.has_damage_check === 2 ? '<span style="color:#ff3333;font-weight:bold">⚠️ Dano Identificado</span>' : 
                    photo.has_damage_check === 1 ? '<span style="color:#00c853;font-weight:bold">✅ Sem Dano</span>' : 
                    '<span style="color:var(--muted)">Pendente</span>';
@@ -741,11 +753,32 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
       </a>
     </div>
     <div class="view" style="text-align:center">
-      <div style="margin-bottom:12px; font-size:1rem">${dmgStatus}</div>
+      <div style="margin-bottom:12px; font-size:1.1rem">${dmgStatus}</div>
+      
+      <div style="background:rgba(255,255,255,0.05); padding:16px; border-radius:12px; margin-bottom:20px; border:1px solid rgba(255,255,255,0.1)">
+        <div style="font-size:0.85rem; color:var(--muted); margin-bottom:12px">Alterar status da inspeção:</div>
+        <div style="display:flex; gap:12px; justify-content:center;">
+          <button class="btn btn-ghost" style="flex:1; border-color:#00c853; color:#00c853; font-size:0.85rem" onclick="updatePhotoCheck(1)">✅ Sem Dano</button>
+          <button class="btn btn-ghost" style="flex:1; border-color:#ff3333; color:#ff3333; font-size:0.85rem" onclick="updatePhotoCheck(2)">⚠️ Com Dano</button>
+        </div>
+      </div>
+
       <p style="color:var(--muted); font-size:0.82rem; margin-bottom:20px">${ts}</p>
       <button class="btn btn-primary" onclick="go('${retakeUrl}')"> 📷 Tirar novamente</button>
       <p style="font-size:0.7rem; color:var(--muted); margin-top:12px">Dica: Toque na imagem para ver em resolução original.</p>
     </div>`;
+}
+
+async function updatePhotoCheck(status) {
+  const photoId = window._currentPhotoId;
+  if (!photoId) return;
+  try {
+    await API.post(`/api/photos/${photoId}/check`, { status });
+    toast('Status atualizado!', 'ok');
+    route(); // Recarrega a view atual
+  } catch(e) {
+    toast('Erro ao atualizar status', 'err');
+  }
 }
 
 function downloadReport(aircraftId, position) {

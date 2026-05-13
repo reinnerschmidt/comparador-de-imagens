@@ -627,6 +627,21 @@ def deactivate_position_area(aircraft_id: int, position: str, ga_id: int):
 
 # ─── Photos ───────────────────────────────────────────────────────────────────
 
+@app.route("/api/photos/<int:photo_id>/check", methods=["POST"])
+def update_photo_check(photo_id: int):
+    data = request.get_json(force=True)
+    status = data.get("status") # 1 ou 2
+    if status not in [1, 2]:
+        return jsonify({"error": "Status inválido"}), 400
+    
+    with db_conn() as conn:
+        conn.cursor().execute(
+            f"UPDATE inspection_photos SET has_damage_check={PH} WHERE id={PH}",
+            (status, photo_id)
+        )
+    return jsonify({"ok": True})
+
+
 @app.route("/api/photos/upload", methods=["POST"])
 def upload_photo():
     """Recebe foto em base64, salva em disco e registra no banco."""
