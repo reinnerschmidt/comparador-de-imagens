@@ -193,7 +193,8 @@ async function askAI() {
     typeWriter();
 
   } catch (err) {
-    answerArea.innerHTML = `<div style="color:var(--danger)">Erro: ${err.message}</div>`;
+    const msg = err.error || err.message || 'Erro desconhecido';
+    answerArea.innerHTML = `<div style="color:var(--danger)">Erro: ${msg}</div>`;
     input.disabled = false;
   }
 }

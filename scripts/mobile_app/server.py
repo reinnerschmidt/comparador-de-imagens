@@ -1146,8 +1146,16 @@ def ai_query():
     SQL:"""
 
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(schema_prompt)
+        # Tenta usar o flash primeiro (mais rápido), com fallback para o pro
+        model_name = 'models/gemini-1.5-flash'
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(schema_prompt)
+        except Exception as flash_err:
+            print(f"⚠️ Gemini Flash falhou, tentando Pro: {flash_err}")
+            model = genai.GenerativeModel('models/gemini-1.5-pro')
+            response = model.generate_content(schema_prompt)
+            
         sql_query = response.text.strip().replace('```sql', '').replace('```', '').strip()
 
         if sql_query.startswith("ERROR"):
