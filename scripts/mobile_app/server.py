@@ -155,17 +155,21 @@ SCHEMA_SQLITE = """
         notes                   TEXT,
         created_at              TEXT DEFAULT (datetime('now'))
     );
-    CREATE TABLE IF NOT EXISTS inspection_groups (
+    CREATE TABLE IF NOT EXISTS global_areas (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
-        aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
-        position    TEXT,
-        name        TEXT NOT NULL,
+        name        TEXT NOT NULL UNIQUE,
         created_at  TEXT DEFAULT (datetime('now'))
     );
-    CREATE TABLE IF NOT EXISTS group_subareas (
-        group_id INTEGER NOT NULL REFERENCES inspection_groups(id) ON DELETE CASCADE,
-        area_id  INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
-        PRIMARY KEY (group_id, area_id)
+    CREATE TABLE IF NOT EXISTS global_area_subareas (
+        global_area_id INTEGER NOT NULL REFERENCES global_areas(id) ON DELETE CASCADE,
+        subarea_id     INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+        PRIMARY KEY (global_area_id, subarea_id)
+    );
+    CREATE TABLE IF NOT EXISTS position_areas (
+        aircraft_id    INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
+        position       TEXT NOT NULL,
+        global_area_id INTEGER NOT NULL REFERENCES global_areas(id) ON DELETE CASCADE,
+        PRIMARY KEY (aircraft_id, position, global_area_id)
     );
 """
 
@@ -222,17 +226,21 @@ SCHEMA_PG = """
         notes                   TEXT,
         created_at              TIMESTAMPTZ DEFAULT NOW()
     );
-    CREATE TABLE IF NOT EXISTS inspection_groups (
+    CREATE TABLE IF NOT EXISTS global_areas (
         id          SERIAL PRIMARY KEY,
-        aircraft_id INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
-        position    TEXT,
-        name        TEXT NOT NULL,
+        name        TEXT NOT NULL UNIQUE,
         created_at  TIMESTAMPTZ DEFAULT NOW()
     );
-    CREATE TABLE IF NOT EXISTS group_subareas (
-        group_id INTEGER NOT NULL REFERENCES inspection_groups(id) ON DELETE CASCADE,
-        area_id  INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
-        PRIMARY KEY (group_id, area_id)
+    CREATE TABLE IF NOT EXISTS global_area_subareas (
+        global_area_id INTEGER NOT NULL REFERENCES global_areas(id) ON DELETE CASCADE,
+        subarea_id     INTEGER NOT NULL REFERENCES areas(id) ON DELETE CASCADE,
+        PRIMARY KEY (global_area_id, subarea_id)
+    );
+    CREATE TABLE IF NOT EXISTS position_areas (
+        aircraft_id    INTEGER NOT NULL REFERENCES aircraft(id) ON DELETE CASCADE,
+        position       TEXT NOT NULL,
+        global_area_id INTEGER NOT NULL REFERENCES global_areas(id) ON DELETE CASCADE,
+        PRIMARY KEY (aircraft_id, position, global_area_id)
     );
 """
 
@@ -429,68 +437,118 @@ def save_mask(area_id: int):
     return jsonify({"ok": True})
 
 
-# ─── Inspection Groups (Áreas Parentais) ──────────────────────────────────────
+# ─── Global Areas (Pastas de Organização) ────────────────────────────────────
 
-@app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/groups")
-def list_groups(aircraft_id: int, position: str):
-    position = position.upper()
+@app.route("/api/global_areas")
+def list_global_areas():
     with db_conn() as conn:
+        areas = fetchall(conn, "SELECT id, name, created_at FROM global_areas ORDER BY name")
+    return jsonify(areas)
+
+@app.route("/api/global_areas", methods=["POST"])
+def create_global_area():
+    data = request.get_json(force=True)
+    name = (data.get("name") or "").strip()
+    if not name: return jsonify({"error": "Nome obrigatório"}), 400
+    with db_conn() as conn:
+        new_id = execute_returning(conn, f"INSERT INTO global_areas (name) VALUES ({PH})", (name,))
+    return jsonify({"id": new_id, "name": name}), 201
+
+@app.route("/api/global_areas/<int:ga_id>", methods=["DELETE"])
+def delete_global_area(ga_id: int):
+    with db_conn() as conn:
+        conn.cursor().execute(f"DELETE FROM global_areas WHERE id={PH}", (ga_id,))
+    return jsonify({"ok": True})
+
+@app.route("/api/global_areas/<int:ga_id>/subareas")
+def list_global_area_subareas(ga_id: int):
+    with db_conn() as conn:
+        subs = fetchall(
+            conn,
+            f"SELECT a.id, a.name, a.mask_thumb FROM areas a "
+            f"JOIN global_area_subareas gas ON gas.subarea_id = a.id "
+            f"WHERE gas.global_area_id={PH} ORDER BY a.name",
+            (ga_id,)
+        )
+    return jsonify(subs)
+
+@app.route("/api/global_areas/<int:ga_id>/subareas", methods=["POST"])
+def add_subarea_to_global_area(ga_id: int):
+    data = request.get_json(force=True)
+    area_id = data.get("area_id")
+    if not area_id: return jsonify({"error": "area_id obrigatório"}), 400
+    try:
+        with db_conn() as conn:
+            conn.cursor().execute(f"INSERT INTO global_area_subareas (global_area_id, subarea_id) VALUES ({PH}, {PH})", (ga_id, area_id))
+        return jsonify({"ok": True}), 201
+    except Exception:
+        return jsonify({"error": "Já vinculado ou erro"}), 400
+
+@app.route("/api/global_areas/<int:ga_id>/subareas/<int:area_id>", methods=["DELETE"])
+def remove_subarea_from_global_area(ga_id: int, area_id: int):
+    with db_conn() as conn:
+        conn.cursor().execute(f"DELETE FROM global_area_subareas WHERE global_area_id={PH} AND subarea_id={PH}", (ga_id, area_id))
+    return jsonify({"ok": True})
+
+# ─── Aircraft/Position Areas (Ativação de pastas no avião) ───────────────────
+
+@app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/areas")
+def list_position_areas(aircraft_id: int, position: str):
+    position = position.upper()
+    phase = request.args.get("phase")
+    with db_conn() as conn:
+        if phase:
+            # Retorna apenas as sub-áreas que já possuem fotos (usado para o status '✅ Com fotos')
+            rows = fetchall(
+                conn,
+                f"SELECT DISTINCT p.area_id FROM inspection_photos p "
+                f"WHERE p.aircraft_id={PH} AND p.position={PH} AND p.phase={PH}",
+                (aircraft_id, position, phase),
+            )
+            return jsonify(rows)
+
+        # Busca as áreas globais ativadas para este avião/pos
         groups = fetchall(
             conn,
-            f"SELECT id, name, created_at FROM inspection_groups WHERE aircraft_id={PH} AND position={PH} ORDER BY name",
+            f"SELECT ga.id, ga.name FROM global_areas ga "
+            f"JOIN position_areas pa ON pa.global_area_id = ga.id "
+            f"WHERE pa.aircraft_id={PH} AND pa.position={PH} ORDER BY ga.name",
             (aircraft_id, position)
         )
         for g in groups:
-            # fetch subareas for each group
+            # Para cada área global, traz as subáreas que pertencem a ela
             g["subareas"] = fetchall(
                 conn,
                 f"SELECT a.id, a.name, a.mask_thumb FROM areas a "
-                f"JOIN group_subareas gs ON gs.area_id = a.id "
-                f"WHERE gs.group_id={PH} ORDER BY a.name",
+                f"JOIN global_area_subareas gas ON gas.subarea_id = a.id "
+                f"WHERE gas.global_area_id={PH} ORDER BY a.name",
                 (g["id"],)
             )
     return jsonify(groups)
 
-
-@app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/groups", methods=["POST"])
-def create_group(aircraft_id: int, position: str):
+@app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/areas", methods=["POST"])
+def activate_position_area(aircraft_id: int, position: str):
     data = request.get_json(force=True)
-    name = (data.get("name") or "").strip()
-    if not name:
-        return jsonify({"error": "Nome da área é obrigatório"}), 400
+    ga_id = data.get("global_area_id")
+    if not ga_id: return jsonify({"error": "global_area_id obrigatório"}), 400
     position = position.upper()
-    with db_conn() as conn:
-        new_id = execute_returning(
-            conn,
-            f"INSERT INTO inspection_groups (aircraft_id, position, name) VALUES ({PH}, {PH}, {PH})",
-            (aircraft_id, position, name)
-        )
-    return jsonify({"id": new_id, "name": name}), 201
-
-
-@app.route("/api/groups/<int:group_id>/subareas", methods=["POST"])
-def add_subarea_to_group(group_id: int):
-    data = request.get_json(force=True)
-    area_id = data.get("area_id")
-    if not area_id:
-        return jsonify({"error": "area_id é obrigatório"}), 400
     try:
         with db_conn() as conn:
             conn.cursor().execute(
-                f"INSERT INTO group_subareas (group_id, area_id) VALUES ({PH}, {PH})",
-                (group_id, area_id)
+                f"INSERT INTO position_areas (aircraft_id, position, global_area_id) VALUES ({PH}, {PH}, {PH})",
+                (aircraft_id, position, ga_id)
             )
         return jsonify({"ok": True}), 201
     except Exception:
-        return jsonify({"error": "Sub-área já vinculada ou erro interno"}), 400
+        return jsonify({"error": "Já ativa ou erro"}), 400
 
-
-@app.route("/api/groups/<int:group_id>/subareas/<int:area_id>", methods=["DELETE"])
-def remove_subarea_from_group(group_id: int, area_id: int):
+@app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/areas/<int:ga_id>", methods=["DELETE"])
+def deactivate_position_area(aircraft_id: int, position: str, ga_id: int):
+    position = position.upper()
     with db_conn() as conn:
         conn.cursor().execute(
-            f"DELETE FROM group_subareas WHERE group_id={PH} AND area_id={PH}",
-            (group_id, area_id)
+            f"DELETE FROM position_areas WHERE aircraft_id={PH} AND position={PH} AND global_area_id={PH}",
+            (aircraft_id, position, ga_id)
         )
     return jsonify({"ok": True})
 
@@ -586,19 +644,6 @@ def list_photos(aircraft_id: int, area_id: int):
     return jsonify(result)
 
 
-@app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/areas")
-def list_position_areas(aircraft_id: int, position: str):
-    """Lista áreas com fotos nesta posição do avião."""
-    position = position.upper()
-    with db_conn() as conn:
-        rows = fetchall(
-            conn,
-            f"SELECT DISTINCT p.area_id, a.name, a.mask_thumb "
-            f"FROM inspection_photos p JOIN areas a ON a.id = p.area_id "
-            f"WHERE p.aircraft_id={PH} AND p.position={PH}",
-            (aircraft_id, position),
-        )
-    return jsonify(rows)
 
 
 # ─── Analysis ─────────────────────────────────────────────────────────────────

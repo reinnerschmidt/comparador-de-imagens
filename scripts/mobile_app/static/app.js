@@ -52,11 +52,12 @@ function route() {
   if (h === '/aircrafts')                     return renderAircraftList(app);
   if (h === '/aircraft/new')                  return renderNewAircraft(app);
   if (h === '/area/new')                      return renderNewArea(app);
+  if (h === '/global-area/new')               return renderNewGlobalArea(app);
+  if ((r = m(/^\/global-area\/(\d+)$/)))      return renderGlobalAreaDetail(app, r[1]);
   if ((r = m(/^\/aircraft\/(\d+)$/)))         return renderAircraftDetail(app, r[1]);
   if ((r = m(/^\/area\/(\d+)\/mask$/)))       return renderMaskEditor(app, r[1]);
-  // Position routes (new)
+  // Position routes
   if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)$/)))                                    return renderPositionDetail(app, r[1], r[2]);
-  if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/group\/(\d+)$/)))                      return renderGroupDetail(app, r[1], r[2], r[3]);
   if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)$/)))                       return renderAreaDetail(app, r[3], r[1], r[2]);
   if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/(before|after)\/view$/))) return renderPhotoViewer(app, r[1], r[3], r[4], r[2]);
   if ((r = m(/^\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/(before|after)$/)))       return renderCapture(app, r[1], r[3], r[4], r[2]);
@@ -161,25 +162,46 @@ async function renderAircraftList(app) {
 
       <div class="divider" style="margin:24px 0"></div>
 
+      <div class="section-label">Áreas (Globais)</div>
+      <div id="home-global-areas" class="cards-grid"><div class="spinner"></div></div>
+      <button class="btn btn-ghost" onclick="go('/global-area/new')" style="margin-top:8px">+ Nova área global</button>
+
+      <div class="divider" style="margin:24px 0"></div>
+
       <div class="section-label">Modelos de Máscara (Globais)</div>
       <div id="home-areas" class="cards-grid"><div class="spinner"></div></div>
       <button class="btn btn-ghost" onclick="go('/area/new')" style="margin-top:8px">+ Novo modelo global</button>
     </div>`;
 
-  const [aircraft, areas] = await Promise.all([
+  const [aircraft, areas, globalAreas] = await Promise.all([
     API.get('/api/aircraft').catch(() => []),
     API.get('/api/areas').catch(() => []),
+    API.get('/api/global_areas').catch(() => []),
   ]);
 
   const acList = document.getElementById('home-aircraft');
   if (!aircraft.length) {
     acList.innerHTML = `<p style="color:var(--muted);font-size:0.85rem">Nenhuma aeronave cadastrada.</p>`;
   } else {
-  acList.innerHTML = aircraft.map(a => `
+    acList.innerHTML = aircraft.map(a => `
       <div class="card" onclick="go('/aircraft/${a.id}')">
         <span class="card-icon">🛩️</span>
         <div class="card-body">
           <div class="card-title">${esc(a.serial)}</div>
+        </div>
+        <span style="color:var(--muted);font-size:1.2rem">›</span>
+      </div>`).join('');
+  }
+
+  const gaList = document.getElementById('home-global-areas');
+  if (!globalAreas.length) {
+    gaList.innerHTML = `<p style="color:var(--muted);font-size:0.85rem">Nenhuma área global criada.</p>`;
+  } else {
+    gaList.innerHTML = globalAreas.map(ga => `
+      <div class="card" onclick="go('/global-area/${ga.id}')">
+        <span class="card-icon">📂</span>
+        <div class="card-body">
+          <div class="card-title">${esc(ga.name)}</div>
         </div>
         <span style="color:var(--muted);font-size:1.2rem">›</span>
       </div>`).join('');
@@ -199,6 +221,103 @@ async function renderAircraftList(app) {
         <span style="color:var(--muted);font-size:1.2rem">›</span>
       </div>`).join('');
   }
+}
+
+/* ════════════════════════════════════════════
+   GLOBAL AREAS — Gestão de Pastas Globais
+   ════════════════════════════════════════════ */
+function renderNewGlobalArea(app) {
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="history.back()">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
+      <h1>Nova área global</h1>
+    </div>
+    <div class="view">
+      <div class="form-group">
+        <label class="form-label">Nome da área (ex: Cockpit)</label>
+        <input id="ga-name" class="form-input" placeholder="ex: Cockpit">
+      </div>
+      <button class="btn btn-primary" onclick="submitGlobalArea()">Cadastrar</button>
+    </div>`;
+}
+
+async function submitGlobalArea() {
+  const name = document.getElementById('ga-name').value.trim();
+  if (!name) { toast('Informe o nome', 'err'); return; }
+  const res = await API.post('/api/global_areas', { name });
+  if (res?.error) { toast(res.error, 'err'); return; }
+  go(`/global-area/${res.id}`);
+}
+
+async function renderGlobalAreaDetail(app, id) {
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/aircrafts')">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
+      <h1 id="ga-title">…</h1>
+      <button class="btn-icon" style="color:var(--danger)" onclick="deleteGlobalArea(${id})">🗑</button>
+    </div>
+    <div class="view">
+      <div class="section-label">Sub-áreas (Modelos de Máscara) nesta área</div>
+      <div id="ga-subareas" class="cards-grid"><div class="spinner"></div></div>
+      
+      <div class="divider" style="margin:24px 0"></div>
+      
+      <div class="section-label">Vincular novo modelo</div>
+      <select id="sel-subarea" class="form-input" style="margin-bottom:8px"></select>
+      <button class="btn btn-primary" onclick="addSubareaToGlobal(${id})">Vincular Modelo</button>
+    </div>`;
+
+  const [allAreas, currentSubs, globalAreas] = await Promise.all([
+    API.get('/api/areas'),
+    API.get(`/api/global_areas/${id}/subareas`),
+    API.get('/api/global_areas')
+  ]);
+
+  const ga = globalAreas.find(x => x.id == id);
+  if (!ga) { go('/'); return; }
+  document.getElementById('ga-title').textContent = ga.name;
+
+  const list = document.getElementById('ga-subareas');
+  if (!currentSubs.length) {
+    list.innerHTML = `<p style="color:var(--muted);font-size:0.85rem">Nenhum modelo vinculado.</p>`;
+  } else {
+    list.innerHTML = currentSubs.map(s => `
+      <div class="card">
+        ${s.mask_thumb ? `<img class="card-thumb" src="${s.mask_thumb}">` : `<span class="card-icon">📐</span>`}
+        <div class="card-body">
+          <div class="card-title">${esc(s.name)}</div>
+        </div>
+        <button class="btn-icon" style="color:var(--danger)" onclick="removeSubareaFromGlobal(${id}, ${s.id})">✕</button>
+      </div>`).join('');
+  }
+
+  const select = document.getElementById('sel-subarea');
+  const available = allAreas.filter(a => !currentSubs.find(s => s.id == a.id));
+  select.innerHTML = `<option value="">Selecione um modelo...</option>` + 
+    available.map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
+}
+
+async function addSubareaToGlobal(gaId) {
+  const areaId = document.getElementById('sel-subarea').value;
+  if (!areaId) return;
+  await API.post(`/api/global_areas/${gaId}/subareas`, { area_id: areaId });
+  renderGlobalAreaDetail(document.getElementById('app'), gaId);
+}
+
+async function removeSubareaFromGlobal(gaId, areaId) {
+  if (!confirm('Desvincular este modelo?')) return;
+  await API.delete(`/api/global_areas/${gaId}/subareas/${areaId}`);
+  renderGlobalAreaDetail(document.getElementById('app'), gaId);
+}
+
+async function deleteGlobalArea(id) {
+  if (!confirm('Remover esta área global?')) return;
+  await API.delete(`/api/global_areas/${id}`);
+  go('/aircrafts');
 }
 
 /* ════════════════════════════════════════════
@@ -298,11 +417,11 @@ async function renderPositionDetail(app, aircraftId, position) {
     <div class="view" style="padding-bottom: 80px">
       <div class="section-label" style="display:flex; justify-content:space-between; align-items:center">
         Áreas (Pastas)
-        <button class="btn btn-ghost btn-small" onclick="createNewGroup(${aircraftId}, '${position}')" style="padding:4px 8px; font-size:0.8rem">+ Nova</button>
+        <button class="btn btn-ghost btn-small" onclick="openActivateAreaModal()" style="padding:4px 8px; font-size:0.8rem">+ Adicionar</button>
       </div>
       <div id="pos-groups" class="cards-grid"><div class="spinner"></div></div>
       
-      <div class="section-label" style="margin-top:24px">Sub-áreas Livres</div>
+      <div class="section-label" style="margin-top:24px">Sub-áreas Livres (Sem Pasta)</div>
       <div id="pos-areas" class="cards-grid"><div class="spinner"></div></div>
       
       <div class="btn-row" style="margin-top:20px">
@@ -310,50 +429,66 @@ async function renderPositionDetail(app, aircraftId, position) {
         <button class="btn btn-ghost" onclick="downloadReport(${aircraftId}, '${position}')">📄 PDF</button>
       </div>
     </div>
-    <div id="move-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:999; align-items:center; justify-content:center; padding:16px;">
-      <div class="card" style="width:100%; max-width:400px; padding:24px; background:var(--card-bg);">
-        <h3 style="margin-bottom:16px;">Mover Sub-área</h3>
-        <p style="margin-bottom:12px; color:var(--muted); font-size:0.9rem" id="move-modal-text"></p>
-        <select id="move-group-select" class="form-input" style="margin-bottom:16px; background:#111; color:#fff; padding:12px; width:100%; border:1px solid #333; border-radius:8px;">
+    <div id="activate-area-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:999; align-items:center; justify-content:center; padding:16px;">
+      <div style="display:block; width:100%; max-width:400px; padding:24px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:0 10px 40px rgba(0,0,0,0.5);">
+        <h3 style="margin-bottom:16px; font-size:1.2rem; font-weight:600; color:var(--text)">Adicionar Área Global</h3>
+        <p style="margin-bottom:16px; color:var(--muted); font-size:0.9rem">Escolha uma área para ativar nesta posição:</p>
+        <select id="sel-activate-ga" class="form-input" style="margin-bottom:20px; background:var(--bg); color:var(--text);">
         </select>
         <div style="display:flex; gap:12px">
-          <button class="btn btn-ghost" onclick="closeMoveModal()" style="flex:1">Cancelar</button>
-          <button class="btn btn-primary" onclick="confirmMoveSubarea()" style="flex:1">Confirmar</button>
+          <button class="btn btn-ghost" onclick="closeActivateAreaModal()" style="flex:1">Cancelar</button>
+          <button class="btn btn-primary" onclick="confirmActivateArea(${aircraftId}, '${position}')" style="flex:1">Adicionar</button>
         </div>
       </div>
     </div>`;
 
   const phase = getPhase();
-  const [groups, posAreas, allAreas] = await Promise.all([
-    API.get(`/api/aircraft/${aircraftId}/pos/${position}/groups`).catch(() => []),
-    API.get(`/api/aircraft/${aircraftId}/pos/${position}/areas?phase=${encodeURIComponent(phase)}`).catch(() => []),
-    API.get('/api/areas').catch(() => []),
+  const [activatedAreas, posPhotoStats, allAreas, allGlobalAreas] = await Promise.all([
+    API.get(`/api/aircraft/${aircraftId}/pos/${position}/areas`),
+    API.get(`/api/aircraft/${aircraftId}/pos/${position}/areas?phase=${encodeURIComponent(phase)}`).catch(() => []), // stats de fotos
+    API.get('/api/areas'),
+    API.get('/api/global_areas')
   ]);
 
-  window._currentPositionGroups = groups;
   window._currentAircraftId = aircraftId;
   window._currentPosition = position;
+  window._allGlobalAreas = allGlobalAreas;
+  window._activatedGlobalAreas = activatedAreas;
 
   const groupedAreaIds = new Set();
-  groups.forEach(g => {
+  activatedAreas.forEach(g => {
     g.subareas.forEach(sa => groupedAreaIds.add(sa.id));
   });
 
-  const withPhotos = new Set(posAreas.map(a => a.area_id));
+  const photoStatsMap = new Set(posPhotoStats.map(a => a.area_id));
 
-  // Render Groups
+  // Render Activated Areas (Folders)
   const groupsGrid = document.getElementById('pos-groups');
-  if (!groups.length) {
-    groupsGrid.innerHTML = `<div class="no-mask-banner" style="grid-column: 1/-1;">Nenhuma área criada.</div>`;
+  if (!activatedAreas.length) {
+    groupsGrid.innerHTML = `<div class="no-mask-banner" style="grid-column: 1/-1;">Nenhuma área adicionada.</div>`;
   } else {
-    groupsGrid.innerHTML = groups.map(g => `
-      <div class="card" onclick="go('/aircraft/${aircraftId}/pos/${position}/group/${g.id}')">
-        <span class="card-icon">📁</span>
-        <div class="card-body">
-          <div class="card-title">${esc(g.name)}</div>
-          <div class="card-sub">${g.subareas.length} sub-áreas</div>
+    groupsGrid.innerHTML = activatedAreas.map(g => `
+      <div class="card" style="flex-direction:column; align-items:stretch; padding:0; overflow:hidden;">
+        <div style="padding:16px; display:flex; align-items:center; background:rgba(255,255,255,0.03); border-bottom:1px solid var(--border)">
+          <span class="card-icon">📂</span>
+          <div class="card-body">
+            <div class="card-title">${esc(g.name)}</div>
+            <div class="card-sub">${g.subareas.length} sub-áreas</div>
+          </div>
+          <button class="btn-icon" style="color:var(--danger)" onclick="deactivateArea(${aircraftId}, '${position}', ${g.id})">✕</button>
         </div>
-        <span style="color:var(--muted);font-size:1.2rem">›</span>
+        <div style="padding:8px; display:flex; flex-direction:column; gap:4px;">
+          ${g.subareas.map(sa => `
+            <div class="card" style="background:transparent; border:none; padding:8px 12px;" onclick="go('/aircraft/${aircraftId}/pos/${position}/area/${sa.id}')">
+              ${sa.mask_thumb ? `<img src="${sa.mask_thumb}" style="width:32px;height:32px;border-radius:4px;object-fit:cover;margin-right:12px;">` : `<span style="margin-right:12px;">📐</span>`}
+              <div class="card-body">
+                <div class="card-title" style="font-size:0.9rem">${esc(sa.name)}</div>
+                <div class="card-sub" style="font-size:0.75rem">${photoStatsMap.has(sa.id) ? '✅ Com fotos' : '📸 Sem fotos'}</div>
+              </div>
+              <span style="color:var(--muted)">›</span>
+            </div>
+          `).join('')}
+        </div>
       </div>`).join('');
   }
 
@@ -361,53 +496,51 @@ async function renderPositionDetail(app, aircraftId, position) {
   const freeAreas = allAreas.filter(a => !groupedAreaIds.has(a.id));
   const grid = document.getElementById('pos-areas');
   if (!freeAreas.length) {
-    grid.innerHTML = `<div class="no-mask-banner" style="grid-column: 1/-1;">Todas as sub-áreas estão agrupadas.</div>`;
+    grid.innerHTML = `<div class="no-mask-banner" style="grid-column: 1/-1;">Todas as sub-áreas estão em pastas.</div>`;
   } else {
     grid.innerHTML = freeAreas.map(a => `
-      <div class="card">
-        <div style="display:flex; flex:1; align-items:center;" onclick="go('/aircraft/${aircraftId}/pos/${position}/area/${a.id}')">
-          ${a.mask_thumb ? `<img class="card-thumb" src="${a.mask_thumb}">` : `<span class="card-icon">📐</span>`}
-          <div class="card-body">
-            <div class="card-title">${esc(a.name)}</div>
-            <div class="card-sub">${withPhotos.has(a.id) ? '✅ Com fotos' : '📸 Sem fotos'}</div>
-          </div>
+      <div class="card" onclick="go('/aircraft/${aircraftId}/pos/${position}/area/${a.id}')">
+        ${a.mask_thumb ? `<img class="card-thumb" src="${a.mask_thumb}">` : `<span class="card-icon">📐</span>`}
+        <div class="card-body">
+          <div class="card-title">${esc(a.name)}</div>
+          <div class="card-sub">${photoStatsMap.has(a.id) ? '✅ Com fotos' : '📸 Sem fotos'}</div>
         </div>
-        ${groups.length > 0 ? `<button class="btn-icon" style="background:#222; padding:8px; border-radius:6px; font-size:0.8rem; margin-left:8px;" onclick="openMoveModal(${a.id}, '${esc(a.name)}')">Mover</button>` : ''}
+        <span style="color:var(--muted);font-size:1.2rem">›</span>
       </div>`).join('');
   }
 }
 
-async function createNewGroup(aircraftId, position) {
-  const name = prompt("Nome da Nova Área (ex: Cockpit):");
-  if (!name || !name.trim()) return;
-  try {
-    await API.post(`/api/aircraft/${aircraftId}/pos/${position}/groups`, { name: name.trim() });
-    renderPositionDetail(document.getElementById('app'), aircraftId, position);
-  } catch(e) {}
+function openActivateAreaModal() {
+  const all = window._allGlobalAreas || [];
+  const activeIds = new Set((window._activatedGlobalAreas || []).map(g => g.id));
+  const available = all.filter(ga => !activeIds.has(ga.id));
+  
+  const select = document.getElementById('sel-activate-ga');
+  if (!available.length) {
+    select.innerHTML = `<option value="">Todas as áreas já foram adicionadas</option>`;
+  } else {
+    select.innerHTML = `<option value="">Selecione uma área...</option>` + 
+      available.map(ga => `<option value="${ga.id}">${esc(ga.name)}</option>`).join('');
+  }
+  document.getElementById('activate-area-modal').style.display = 'flex';
 }
 
-let _moveToAreaId = null;
-function openMoveModal(areaId, areaName) {
-  _moveToAreaId = areaId;
-  const groups = window._currentPositionGroups || [];
-  document.getElementById('move-modal-text').textContent = `Selecione a área de destino para "${areaName}":`;
-  const select = document.getElementById('move-group-select');
-  select.innerHTML = groups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
-  document.getElementById('move-modal').style.display = 'flex';
+function closeActivateAreaModal() {
+  document.getElementById('activate-area-modal').style.display = 'none';
 }
-function closeMoveModal() {
-  document.getElementById('move-modal').style.display = 'none';
-  _moveToAreaId = null;
+
+async function confirmActivateArea(aircraftId, position) {
+  const gaId = document.getElementById('sel-activate-ga').value;
+  if (!gaId) return;
+  await API.post(`/api/aircraft/${aircraftId}/pos/${position}/areas`, { global_area_id: gaId });
+  closeActivateAreaModal();
+  renderPositionDetail(document.getElementById('app'), aircraftId, position);
 }
-async function confirmMoveSubarea() {
-  if (!_moveToAreaId) return;
-  const groupId = document.getElementById('move-group-select').value;
-  if (!groupId) return;
-  try {
-    await API.post(`/api/groups/${groupId}/subareas`, { area_id: _moveToAreaId });
-    closeMoveModal();
-    renderPositionDetail(document.getElementById('app'), window._currentAircraftId, window._currentPosition);
-  } catch(e) {}
+
+async function deactivateArea(aircraftId, position, gaId) {
+  if (!confirm('Remover esta pasta desta posição? (As fotos não serão apagadas)')) return;
+  await API.delete(`/api/aircraft/${aircraftId}/pos/${position}/areas/${gaId}`);
+  renderPositionDetail(document.getElementById('app'), aircraftId, position);
 }
 
 async function renderGroupDetail(app, aircraftId, position, groupId) {

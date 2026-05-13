@@ -107,14 +107,19 @@ html, body {
 .btn-icon:hover { background: var(--border); }
 
 /* ════════════════════════════════════════════
-   CARDS
-════════════════════════════════════════════ */
+   CARDS & GRIDS
+   ════════════════════════════════════════════ */
+.cards-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px;
-  margin-bottom: 10px;
   display: flex;
   align-items: center;
   gap: 14px;
