@@ -986,9 +986,15 @@ function renderCropEditor(dataUrl, fileName) {
       <button class="btn-icon" onclick="closeCropEditor()" style="color:#fff; background:rgba(0,0,0,0.5);">‹</button>
       <span style="color:#fff; font-size:0.9rem; flex:1;">Selecione a área a analisar</span>
     </div>
-    <div class="camera-bottom-bar" style="position:absolute; bottom:0; left:0; right:0; z-index:20; display:flex; gap:16px; justify-content:center; padding: 16px 24px calc(16px + env(safe-area-inset-bottom, 16px)); background:linear-gradient(to top,rgba(0,0,0,.85),transparent);">
-      <button class="btn btn-ghost" onclick="resetCrop()" style="flex:0 1 140px;">🔄 Refazer</button>
-      <button class="btn btn-primary" onclick="confirmCrop()" style="flex:0 1 180px;">✓ Confirmar Área</button>
+    <div class="camera-bottom-bar" style="position:absolute; bottom:0; left:0; right:0; z-index:20; display:flex; flex-direction:column; gap:12px; padding: 16px 24px calc(16px + env(safe-area-inset-bottom, 16px)); background:linear-gradient(to top,rgba(0,0,0,.85),transparent);">
+      <label style="color:#fff; font-size:1rem; display:flex; align-items:center; gap:8px; justify-content:center;">
+        <input type="checkbox" id="crop-has-damage" style="width:20px;height:20px;">
+        Esta foto apresenta dano
+      </label>
+      <div style="display:flex; gap:16px; justify-content:center;">
+        <button class="btn btn-ghost" onclick="resetCrop()" style="flex:0 1 140px;">🔄 Refazer</button>
+        <button class="btn btn-primary" onclick="confirmCrop()" style="flex:0 1 180px;">✓ Confirmar</button>
+      </div>
     </div>`;
   document.body.appendChild(overlay);
 
@@ -1117,46 +1123,172 @@ async function confirmCrop() {
   out.getContext('2d').drawImage(_cropCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
   const dataUrl = out.toDataURL('image/jpeg', 0.92);
 
-  // Get context from window._captureCtx (new) or hash (legacy)
+  // Obter contexto
   let aircraftId, areaId, mode, position = null;
   const ctx = window._captureCtx;
   if (ctx) {
     ({ aircraftId, areaId, mode, position } = ctx);
-    window._captureCtx = null;
   } else {
     const h = location.hash.slice(1);
-    // Try new route: /aircraft/:id/pos/:pos/area/:aid/:mode
     let m = h.match(/\/aircraft\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/(before|after)/);
     if (m) { [, aircraftId, position, areaId, mode] = m; }
     else {
-      // Legacy: /aircraft/:id/area/:aid/:mode
       m = h.match(/\/aircraft\/(\d+)\/area\/(\d+)\/(before|after)/);
       if (m) { [, aircraftId, areaId, mode] = m; }
     }
+  }
+
+  const hasDamage = document.getElementById('crop-has-damage')?.checked;
+  if (hasDamage) {
+    document.getElementById('crop-overlay').style.display = 'none';
+    renderDamageMarker(dataUrl, aircraftId, areaId, mode, position);
+    return;
   }
 
   if (aircraftId && areaId && mode) {
     const btn = document.querySelector('#crop-overlay .btn-primary');
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
     try {
-      await API.post('/api/photos/upload', {
-        aircraft_id: parseInt(aircraftId),
-        area_id:     parseInt(areaId),
-        mode,
-        position:    position || null,
-        phase:       getPhase(),
-        image:       dataUrl,
-      });
-      toast('✅ Foto enviada!', 'ok');
+      await uploadPhotoData(aircraftId, areaId, mode, position, dataUrl, false, []);
+      window._captureCtx = null;
+      document.getElementById('crop-overlay')?.remove();
+      history.back();
     } catch(e) {
-      toast('Falha ao enviar foto', 'err');
-      if (btn) { btn.disabled = false; btn.textContent = '✓ Confirmar Área'; }
-      return;
+      if (btn) { btn.disabled = false; btn.textContent = '✓ Confirmar'; }
     }
   }
+}
 
-  document.getElementById('crop-overlay')?.remove();
-  history.back();
+// -- Damage Marker --
+let _damageRegions = [];
+let _damageIsDrawing = false;
+let _damageStart = null;
+let _damageCanvas = null;
+let _damageCtx = null;
+let _damageImg = null;
+
+function renderDamageMarker(dataUrl, aircraftId, areaId, mode, position) {
+  _damageRegions = [];
+  const overlay = document.createElement('div');
+  overlay.id = 'damage-overlay';
+  overlay.innerHTML = `
+    <canvas id="damage-canvas" style="touch-action:none;"></canvas>
+    <div class="camera-top-bar" style="display:flex; align-items:center; gap:10px; z-index:20; background:rgba(0,0,0,0.6)">
+      <span style="color:#fff; font-size:0.9rem; flex:1;">Marque as áreas de dano arrastando o dedo</span>
+      <button class="btn btn-ghost btn-small" onclick="_damageRegions.pop(); drawDamageMarker()" style="padding:4px 8px; font-size:0.8rem">Desfazer</button>
+    </div>
+    <div class="camera-bottom-bar" style="position:absolute; bottom:0; left:0; right:0; z-index:20; display:flex; gap:16px; justify-content:center; padding: 16px 24px calc(16px + env(safe-area-inset-bottom, 16px)); background:linear-gradient(to top,rgba(0,0,0,.85),transparent);">
+      <button class="btn btn-ghost" onclick="cancelDamageMarker()" style="flex:0 1 140px;">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmDamageMarker('${aircraftId}', '${areaId}', '${mode}', '${position || ''}', '${dataUrl}')" style="flex:0 1 180px;">✓ Enviar</button>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  _damageCanvas = document.getElementById('damage-canvas');
+  _damageCtx = _damageCanvas.getContext('2d');
+  _damageImg = new Image();
+  _damageImg.onload = () => {
+    _damageCanvas.width = window.innerWidth;
+    _damageCanvas.height = window.innerHeight;
+    drawDamageMarker();
+  };
+  _damageImg.src = dataUrl;
+
+  _damageCanvas.addEventListener('pointerdown', damagePointerDown);
+  _damageCanvas.addEventListener('pointermove', damagePointerMove);
+  _damageCanvas.addEventListener('pointerup',   damagePointerUp);
+}
+
+function cancelDamageMarker() {
+  document.getElementById('damage-overlay')?.remove();
+  document.getElementById('crop-overlay').style.display = 'block';
+}
+
+function drawDamageMarker() {
+  if (!_damageCtx || !_damageImg) return;
+  const W = _damageCanvas.width;
+  const H = _damageCanvas.height;
+  
+  _damageCtx.clearRect(0, 0, W, H);
+  const ir = _damageImg.naturalWidth / _damageImg.naturalHeight;
+  const cr = W / H;
+  let sw, sh, sx, sy;
+  if (ir > cr) { sh = H; sw = H * ir; sx = (W - sw) / 2; sy = 0; }
+  else         { sw = W; sh = W / ir; sx = 0; sy = (H - sh) / 2; }
+  
+  window._damageImageMetrics = { sx, sy, sw, sh, W, H };
+  
+  _damageCtx.drawImage(_damageImg, sx, sy, sw, sh);
+
+  _damageCtx.shadowColor = 'rgba(255,0,0,0.5)';
+  _damageCtx.shadowBlur  = 8;
+  _damageCtx.strokeStyle = '#ff3333';
+  _damageCtx.lineWidth = 3;
+  _damageRegions.forEach(r => {
+    _damageCtx.strokeRect(sx + r.x * sw, sy + r.y * sh, r.w * sw, r.h * sh);
+  });
+  _damageCtx.shadowBlur = 0;
+}
+
+function damagePointerDown(e) {
+  const r = _damageCanvas.getBoundingClientRect();
+  const { sx, sy, sw, sh } = window._damageImageMetrics;
+  let x = (e.clientX - r.left - sx) / sw;
+  let y = (e.clientY - r.top - sy) / sh;
+  _damageStart = { x, y };
+  _damageIsDrawing = true;
+  _damageRegions.push({ x, y, w: 0, h: 0 });
+}
+
+function damagePointerMove(e) {
+  if (!_damageIsDrawing) return;
+  const r = _damageCanvas.getBoundingClientRect();
+  const { sx, sy, sw, sh } = window._damageImageMetrics;
+  let cx = (e.clientX - r.left - sx) / sw;
+  let cy = (e.clientY - r.top - sy) / sh;
+  
+  const current = _damageRegions[_damageRegions.length - 1];
+  current.x = Math.min(_damageStart.x, cx);
+  current.y = Math.min(_damageStart.y, cy);
+  current.w = Math.abs(cx - _damageStart.x);
+  current.h = Math.abs(cy - _damageStart.y);
+  drawDamageMarker();
+}
+
+function damagePointerUp() {
+  _damageIsDrawing = false;
+  const current = _damageRegions[_damageRegions.length - 1];
+  if (current && (current.w < 0.01 || current.h < 0.01)) {
+    _damageRegions.pop();
+    drawDamageMarker();
+  }
+}
+
+window.confirmDamageMarker = async function(aircraftId, areaId, mode, position, dataUrl) {
+  const btn = document.querySelector('#damage-overlay .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando...'; }
+  try {
+    await uploadPhotoData(aircraftId, areaId, mode, position, dataUrl, true, _damageRegions);
+    document.getElementById('damage-overlay')?.remove();
+    document.getElementById('crop-overlay')?.remove();
+    window._captureCtx = null;
+    history.back();
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Enviar'; }
+  }
+}
+
+async function uploadPhotoData(aircraftId, areaId, mode, position, dataUrl, hasDamage, damageRegions) {
+  await API.post('/api/photos/upload', {
+    aircraft_id: parseInt(aircraftId),
+    area_id:     parseInt(areaId),
+    mode,
+    position:    position || null,
+    phase:       getPhase(),
+    image:       dataUrl,
+    has_manual_damage: hasDamage,
+    damage_regions: damageRegions
+  });
+  toast('✅ Foto enviada!', 'ok');
 }
 
 async function deleteAircraft(id) {

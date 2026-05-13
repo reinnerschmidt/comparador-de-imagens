@@ -126,7 +126,9 @@ SCHEMA_SQLITE = """
         phase       TEXT DEFAULT 'Recebimento',
         mode        TEXT NOT NULL CHECK(mode IN ('before','after')),
         file_path   TEXT NOT NULL,
-        captured_at TEXT DEFAULT (datetime('now'))
+        captured_at TEXT DEFAULT (datetime('now')),
+        has_manual_damage INTEGER DEFAULT 0,
+        manual_damage_regions TEXT
     );
     CREATE TABLE IF NOT EXISTS analyses (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,7 +193,9 @@ SCHEMA_PG = """
         phase       TEXT DEFAULT 'Recebimento',
         mode        TEXT NOT NULL CHECK(mode IN ('before','after')),
         file_path   TEXT NOT NULL,
-        captured_at TIMESTAMPTZ DEFAULT NOW()
+        captured_at TIMESTAMPTZ DEFAULT NOW(),
+        has_manual_damage BOOLEAN DEFAULT FALSE,
+        manual_damage_regions TEXT
     );
     CREATE TABLE IF NOT EXISTS analyses (
         id              SERIAL PRIMARY KEY,
@@ -269,6 +273,18 @@ def init_db() -> None:
                     cur.execute(f"ALTER TABLE {table} ADD COLUMN phase TEXT DEFAULT 'Recebimento'")
                 except Exception:
                     conn.rollback()
+                    
+        # Migração: colunas de dano manual
+        try:
+            cur.execute("SELECT has_manual_damage FROM inspection_photos LIMIT 1")
+        except Exception:
+            conn.rollback()
+            try:
+                col_type = "BOOLEAN DEFAULT FALSE" if DB_URL else "INTEGER DEFAULT 0"
+                cur.execute(f"ALTER TABLE inspection_photos ADD COLUMN has_manual_damage {col_type}")
+                cur.execute(f"ALTER TABLE inspection_photos ADD COLUMN manual_damage_regions TEXT")
+            except Exception:
+                conn.rollback()
 
 
 # ─── Heatmap URL helper ───────────────────────────────────────────────────────
@@ -489,6 +505,8 @@ def upload_photo():
     area_id     = data.get("area_id")
     mode        = (data.get("mode") or "").lower()
     image_b64   = data.get("image")  # data:image/jpeg;base64,...
+    has_damage  = bool(data.get("has_manual_damage"))
+    damage_regs = json.dumps(data.get("damage_regions", []))
 
     if not all([aircraft_id, area_id, mode, image_b64]):
         return jsonify({"error": "aircraft_id, area_id, mode e image são obrigatórios"}), 400
@@ -528,9 +546,9 @@ def upload_photo():
     with db_conn() as conn:
         photo_id = execute_returning(
             conn,
-            f"INSERT INTO inspection_photos (aircraft_id, area_id, position, phase, mode, file_path) "
-            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH})",
-            (aircraft_id, area_id, position, phase, mode, rel_path),
+            f"INSERT INTO inspection_photos (aircraft_id, area_id, position, phase, mode, file_path, has_manual_damage, manual_damage_regions) "
+            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
+            (aircraft_id, area_id, position, phase, mode, rel_path, has_damage, damage_regs),
         )
 
     return jsonify({"id": photo_id, "file_path": rel_path, "mode": mode}), 201
@@ -545,14 +563,14 @@ def list_photos(aircraft_id: int, area_id: int):
         if position:
             rows = fetchall(
                 conn,
-                f"SELECT id, mode, file_path, captured_at FROM inspection_photos "
+                f"SELECT id, mode, file_path, captured_at, has_manual_damage, manual_damage_regions FROM inspection_photos "
                 f"WHERE aircraft_id={PH} AND area_id={PH} AND position={PH} AND phase={PH} ORDER BY captured_at DESC",
                 (aircraft_id, area_id, position.upper(), phase),
             )
         else:
             rows = fetchall(
                 conn,
-                f"SELECT id, mode, file_path, captured_at FROM inspection_photos "
+                f"SELECT id, mode, file_path, captured_at, has_manual_damage, manual_damage_regions FROM inspection_photos "
                 f"WHERE aircraft_id={PH} AND area_id={PH} AND position IS NULL AND phase={PH} ORDER BY captured_at DESC",
                 (aircraft_id, area_id, phase),
             )
@@ -599,14 +617,14 @@ def _run_area_analysis(aircraft_id: int, area_id: int, position: str | None = No
 
         before = fetchone(
             conn,
-            f"SELECT id, file_path FROM inspection_photos "
+            f"SELECT id, file_path, has_manual_damage, manual_damage_regions FROM inspection_photos "
             f"WHERE aircraft_id={PH} AND area_id={PH} AND mode='before' AND phase={PH}{pos_filter} "
             f"ORDER BY captured_at DESC LIMIT 1",
             (aircraft_id, area_id, phase, position.upper()) if position else (aircraft_id, area_id, phase),
         )
         after = fetchone(
             conn,
-            f"SELECT id, file_path FROM inspection_photos "
+            f"SELECT id, file_path, has_manual_damage, manual_damage_regions FROM inspection_photos "
             f"WHERE aircraft_id={PH} AND area_id={PH} AND mode='after' AND phase={PH}{pos_filter} "
             f"ORDER BY captured_at DESC LIMIT 1",
             (aircraft_id, area_id, phase, position.upper()) if position else (aircraft_id, area_id, phase),
@@ -621,6 +639,19 @@ def _run_area_analysis(aircraft_id: int, area_id: int, position: str | None = No
     after_path  = str(BASE_DIR / after["file_path"])
 
     result = analyze_pair(before_path, after_path, str(COMP_DIR))
+    
+    # Integramos a marcação manual com a IA
+    b_md = before.get("has_manual_damage")
+    a_md = after.get("has_manual_damage")
+    has_manual_damage = bool(b_md) or bool(a_md)
+    
+    ai_status = result["status"]
+    is_false_negative = False
+    
+    if has_manual_damage:
+        if ai_status == "OK":
+            is_false_negative = True
+        result["status"] = "Diferença Detectada"
 
     # Store relative heatmap path
     heatmap_abs = result.get("heatmap_path")
@@ -644,6 +675,22 @@ def _run_area_analysis(aircraft_id: int, area_id: int, position: str | None = No
                 result["status"], rel_heatmap,
             ),
         )
+        
+        # Gera feedback automático para retreino se houver dano manual
+        if has_manual_damage:
+            regions = before.get("manual_damage_regions") if b_md else after.get("manual_damage_regions")
+            execute_returning(
+                conn,
+                f"INSERT INTO feedback (analysis_id, classification_correct, damage_location_correct, corrected_region, notes) "
+                f"VALUES ({PH},{PH},{PH},{PH},{PH})",
+                (
+                    analysis_id,
+                    0 if is_false_negative else 1,
+                    0,
+                    regions,
+                    "Marcação de dano manual recebida durante a captura. Serve como Ground Truth para treinamento."
+                ),
+            )
     result["analysis_id"] = analysis_id
     result["heatmap_path"] = rel_heatmap
     result["heatmap_url"]  = _heatmap_url(rel_heatmap)
@@ -756,7 +803,9 @@ def aircraft_report(aircraft_id: int):
             
             query = f"""
                 SELECT a.*, ar.name as area_name, 
-                pb.file_path as before_path, pa.file_path as after_path 
+                pb.file_path as before_path, pa.file_path as after_path,
+                pb.has_manual_damage as b_md, pb.manual_damage_regions as b_md_reg,
+                pa.has_manual_damage as a_md, pa.manual_damage_regions as a_md_reg
                 FROM analyses a 
                 JOIN areas ar ON ar.id = a.area_id 
                 LEFT JOIN inspection_photos pb ON pb.id = a.before_photo_id 
@@ -905,14 +954,41 @@ def aircraft_report(aircraft_id: int):
             y_imgs = pdf.get_y()
             
             max_img_h = 0
+            def _draw_damage(p, is_md, md_reg):
+                if not is_md or not md_reg: return p
+                try:
+                    regs = json.loads(md_reg)
+                    if not regs: return p
+                    from PIL import ImageDraw
+                    with Image.open(p) as im:
+                        im = im.convert("RGB")
+                        draw = ImageDraw.Draw(im)
+                        w, h = im.size
+                        for r in regs:
+                            x = r['x'] * w
+                            y = r['y'] * h
+                            rw = r['w'] * w
+                            rh = r['h'] * h
+                            # Draw thick red rectangle
+                            for i in range(3):
+                                draw.rectangle([x-i, y-i, x+rw+i, y+rh+i], outline="red")
+                        out_p = p.replace(".jpg", "_dmg.jpg")
+                        im.save(out_p)
+                        return out_p
+                except Exception:
+                    pass
+                return p
+
             try:
                 if before_path and os.path.exists(before_path):
-                    h_b = get_img_h(before_path, w)
-                    pdf.image(before_path, x=x1, y=y_imgs, w=w)
+                    bp = _draw_damage(before_path, a.get("b_md"), a.get("b_md_reg"))
+                    h_b = get_img_h(bp, w)
+                    pdf.image(bp, x=x1, y=y_imgs, w=w)
                     max_img_h = max(max_img_h, h_b)
                 if after_path and os.path.exists(after_path):
-                    h_a = get_img_h(after_path, w)
-                    pdf.image(after_path, x=x2, y=y_imgs, w=w)
+                    ap = _draw_damage(after_path, a.get("a_md"), a.get("a_md_reg"))
+                    h_a = get_img_h(ap, w)
+                    pdf.image(ap, x=x2, y=y_imgs, w=w)
                     max_img_h = max(max_img_h, h_a)
             except Exception as e:
                 pdf.set_xy(x1, y_imgs)
