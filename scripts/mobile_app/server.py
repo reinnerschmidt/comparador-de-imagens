@@ -679,7 +679,8 @@ def create_kotsu_custom_area():
         
     with db_conn() as conn:
         # 1. Criar a área
-        sql_area = f"INSERT INTO areas (name, is_kotsu_only) VALUES ({PH}, 1)"
+        val_true = "TRUE" if DB_URL else "1"
+        sql_area = f"INSERT INTO areas (name, is_kotsu_only) VALUES ({PH}, {val_true})"
         area_id = execute_returning(conn, sql_area, (name,))
         
         # 2. Encontrar ou criar uma área global para custom Kotsu
