@@ -1607,18 +1607,61 @@ function drawDamageMarker() {
   _damageCtx.shadowColor = 'rgba(255,0,0,0.5)';
   _damageCtx.shadowBlur  = 8;
   _damageCtx.strokeStyle = '#ff3333';
-  _damageCtx.lineWidth = 3;
-  _damageRegions.forEach(r => {
-    _damageCtx.strokeRect(sx + r.x * sw, sy + r.y * sh, r.w * sw, r.h * sh);
+  _damageRegions.forEach((r, idx) => {
+    const rx = sx + r.x * sw;
+    const ry = sy + r.y * sh;
+    const rw = r.w * sw;
+    const rh = r.h * sh;
+    
+    // Desenha o retângulo
+    _damageCtx.strokeRect(rx, ry, rw, rh);
+    
+    // Desenha o botão "X" no canto superior direito
+    const btnSize = 24;
+    const bx = rx + rw - btnSize/2;
+    const by = ry - btnSize/2;
+    
+    _damageCtx.fillStyle = '#ff3333';
+    _damageCtx.beginPath();
+    _damageCtx.arc(bx + btnSize/2, by + btnSize/2, btnSize/2, 0, Math.PI * 2);
+    _damageCtx.fill();
+    
+    _damageCtx.strokeStyle = '#fff';
+    _damageCtx.lineWidth = 2;
+    _damageCtx.beginPath();
+    _damageCtx.moveTo(bx + 6, by + 6);
+    _damageCtx.lineTo(bx + btnSize - 6, by + btnSize - 6);
+    _damageCtx.moveTo(bx + btnSize - 6, by + 6);
+    _damageCtx.lineTo(bx + 6, by + btnSize - 6);
+    _damageCtx.stroke();
+    
+    // Salva métricas do botão para detecção de clique
+    r._btn = { bx, by, size: btnSize };
   });
   _damageCtx.shadowBlur = 0;
 }
 
 function damagePointerDown(e) {
   const r = _damageCanvas.getBoundingClientRect();
+  const mouseX = e.clientX - r.left;
+  const mouseY = e.clientY - r.top;
+
+  // Verifica se clicou em algum botão "X" para excluir
+  for (let i = _damageRegions.length - 1; i >= 0; i--) {
+    const reg = _damageRegions[i];
+    if (reg._btn) {
+      const { bx, by, size } = reg._btn;
+      if (mouseX >= bx && mouseX <= bx + size && mouseY >= by && mouseY <= by + size) {
+        _damageRegions.splice(i, 1);
+        drawDamageMarker();
+        return;
+      }
+    }
+  }
+
   const { sx, sy, sw, sh } = window._damageImageMetrics;
-  let x = (e.clientX - r.left - sx) / sw;
-  let y = (e.clientY - r.top - sy) / sh;
+  let x = (mouseX - sx) / sw;
+  let y = (mouseY - sy) / sh;
   _damageStart = { x, y };
   _damageIsDrawing = true;
   _damageRegions.push({ x, y, w: 0, h: 0 });
