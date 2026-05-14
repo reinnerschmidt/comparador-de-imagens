@@ -98,8 +98,11 @@ async function renderHome(app) {
       <!-- Seção IA Insights -->
       <div class="ai-insight-box">
         <div class="section-label" style="margin-top:0">AeroInspect Intelligence</div>
+        <div id="ai-chat-history" class="ai-chat-history">
+          ${renderChatHistory()}
+        </div>
         <div class="ai-input-wrapper">
-          <input id="ai-question" class="ai-input" placeholder="Pergunte algo sobre as inspeções...">
+          <input id="ai-question" class="ai-input" placeholder="Pergunte algo sobre as inspeções..." onkeydown="if(event.key==='Enter') askAI()">
           <button class="ai-btn" onclick="askAI()">✨</button>
         </div>
         <div id="ai-answer" class="ai-answer-area" style="display:none">
@@ -169,12 +172,29 @@ function setPhaseAndGo(phase) {
   go('/aircrafts');
 }
 
+let aiChatHistory = [];
+
+function renderChatHistory() {
+  if (aiChatHistory.length === 0) return '';
+  return aiChatHistory.map(m => `
+    <div class="chat-msg ${m.role}">
+      <div class="chat-bubble">${m.text}</div>
+    </div>
+  `).join('');
+}
+
 async function askAI() {
   const input = document.getElementById('ai-question');
+  const chatHistoryDiv = document.getElementById('ai-chat-history');
   const answerArea = document.getElementById('ai-answer');
   const question = input.value.trim();
   
   if (!question) return;
+  
+  // Adicionar pergunta ao histórico visual
+  aiChatHistory.push({ role: 'user', text: question });
+  chatHistoryDiv.innerHTML = renderChatHistory();
+  chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
   
   answerArea.style.display = 'block';
   answerArea.innerHTML = `<div class="typing-container"><div class="spinner-small"></div> Analisando dados...</div>`;
@@ -184,23 +204,17 @@ async function askAI() {
     const res = await API.post('/api/ai/query', { question });
     if (res.error) throw new Error(res.error);
     
-    // Efeito de digitação
-    answerArea.innerHTML = '';
-    const text = res.answer;
-    let i = 0;
-    const speed = 15;
+    const answer = res.answer;
+    answerArea.style.display = 'none';
     
-    function typeWriter() {
-      if (i < text.length) {
-        answerArea.innerHTML += text.charAt(i);
-        i++;
-        setTimeout(typeWriter, speed);
-      } else {
-        input.disabled = false;
-        input.value = '';
-      }
-    }
-    typeWriter();
+    // Adicionar resposta ao histórico
+    aiChatHistory.push({ role: 'ai', text: answer });
+    chatHistoryDiv.innerHTML = renderChatHistory();
+    chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
+    
+    input.disabled = false;
+    input.value = '';
+    input.focus();
 
   } catch (err) {
     const msg = err.error || err.message || 'Erro desconhecido';
