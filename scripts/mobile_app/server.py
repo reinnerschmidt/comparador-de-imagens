@@ -324,6 +324,16 @@ def init_db() -> None:
             except Exception:
                 conn.rollback()
 
+        # Migração: coluna source (normal | kotsu)
+        try:
+            cur.execute("SELECT source FROM inspection_photos LIMIT 1")
+        except Exception:
+            conn.rollback()
+            try:
+                cur.execute("ALTER TABLE inspection_photos ADD COLUMN source TEXT DEFAULT 'normal'")
+            except Exception:
+                conn.rollback()
+
 
 # ─── Heatmap URL helper ───────────────────────────────────────────────────────
 
@@ -409,7 +419,7 @@ def aircraft_stats(aid: int):
                 f"SELECT COUNT(DISTINCT area_id) as count FROM inspection_photos WHERE aircraft_id = {PH} AND position = {PH}", 
                 (aid, pos))
             
-            # Total de danos únicos na posição (IA ou Manual)
+            # Total de danos únicos na posição (IA, Manual ou Kotsu)
             damages = fetchone(conn,
                 f"SELECT COUNT(DISTINCT area_id) as count FROM ("
                 f"  SELECT area_id FROM analyses WHERE aircraft_id = {PH} AND position = {PH} AND status = 'Dano Detectado' "
@@ -685,7 +695,93 @@ def update_photo_check(photo_id: int):
     return jsonify({"ok": True})
 
 
+
+# ─── Kotsu ────────────────────────────────────────────────────────────────────
+
+@app.route("/api/kotsu", methods=["POST"])
+def register_kotsu():
+    """Registra um dano Kotsu com foto e regiões marcadas obrigatórias."""
+    data = request.get_json(force=True)
+    aircraft_id = data.get("aircraft_id")
+    area_id     = data.get("area_id")
+    position    = data.get("position")
+    img_b64     = data.get("image")
+    regions     = data.get("damage_regions")
+
+    if not all([aircraft_id, area_id, img_b64]):
+        return jsonify({"error": "aircraft_id, area_id e image são obrigatórios"}), 400
+    if not regions or len(regions) == 0:
+        return jsonify({"error": "É obrigatório marcar ao menos uma região de dano"}), 400
+
+    # Salva imagem
+    import base64, binascii
+    try:
+        header, _, b64data = img_b64.partition(",")
+        img_bytes = base64.b64decode(b64data if b64data else img_b64)
+    except (binascii.Error, ValueError):
+        return jsonify({"error": "Imagem base64 inválida"}), 400
+
+    folder = BASE_DIR / "uploads" / "kotsu" / str(aircraft_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    import time
+    filename = f"kotsu_{area_id}_{int(time.time())}.jpg"
+    (folder / filename).write_bytes(img_bytes)
+    rel_path = str((folder / filename).relative_to(BASE_DIR))
+
+    with db_conn() as conn:
+        photo_id = execute_returning(
+            conn,
+            f"INSERT INTO inspection_photos (aircraft_id, area_id, position, phase, mode, file_path, "
+            f"has_manual_damage, has_damage_check, manual_damage_regions, source) "
+            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
+            (aircraft_id, area_id, position or None, "Kotsu", "before",
+             rel_path, True, 2, json.dumps(regions), "kotsu"),
+        )
+
+    return jsonify({"id": photo_id, "ok": True}), 201
+
+
+@app.route("/api/kotsu/<int:aircraft_id>")
+def list_kotsu(aircraft_id: int):
+    """Lista registros Kotsu de um avião, opcionalmente filtrados por posição/área."""
+    position = request.args.get("position")
+    area_id  = request.args.get("area_id")
+
+    with db_conn() as conn:
+        if position and area_id:
+            rows = fetchall(conn,
+                f"SELECT id, area_id, position, file_path, captured_at, manual_damage_regions "
+                f"FROM inspection_photos WHERE aircraft_id={PH} AND source='kotsu' AND position={PH} AND area_id={PH} "
+                f"ORDER BY captured_at DESC",
+                (aircraft_id, position.upper(), area_id))
+        elif position:
+            rows = fetchall(conn,
+                f"SELECT id, area_id, position, file_path, captured_at, manual_damage_regions "
+                f"FROM inspection_photos WHERE aircraft_id={PH} AND source='kotsu' AND position={PH} "
+                f"ORDER BY captured_at DESC",
+                (aircraft_id, position.upper()))
+        else:
+            rows = fetchall(conn,
+                f"SELECT id, area_id, position, file_path, captured_at, manual_damage_regions "
+                f"FROM inspection_photos WHERE aircraft_id={PH} AND source='kotsu' "
+                f"ORDER BY captured_at DESC",
+                (aircraft_id,))
+
+    result = []
+    for r in rows:
+        regs = []
+        try:
+            if r.get("manual_damage_regions"):
+                regs = json.loads(r["manual_damage_regions"])
+        except:
+            pass
+        result.append({**r, "url": "/" + r["file_path"].replace("\\", "/"), "manual_damage_regions": regs})
+
+    return jsonify(result)
+
+
 @app.route("/api/photos/upload", methods=["POST"])
+
 def upload_photo():
     """Recebe foto em base64, salva em disco e registra no banco."""
     data        = request.get_json(force=True)

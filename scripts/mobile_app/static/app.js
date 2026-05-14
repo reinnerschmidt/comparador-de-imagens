@@ -78,7 +78,12 @@ function route() {
   if ((r = m(/^\/area\/(\d+)$/)))                                    return renderAreaDetail(app, r[1], null, null);
   if ((r = m(/^\/aircraft\/(\d+)\/area\/(\d+)\/(before|after)$/)))   return renderCapture(app, r[1], r[2], r[3], null);
   if ((r = m(/^\/analysis\/(\d+)$/)))         return renderAnalysisResult(app, r[1]);
-  if ((r = m(/^\/feedback\/(\d+)$/)))         return renderFeedback(app, r[1]);
+  if ((r = m(/^\/feedback\/(\d+)$/)))          return renderFeedback(app, r[1]);
+  // Kotsu routes
+  if ((r = m(/^\/kotsu\/(\d+)$/)))                                       return renderKotsuPosition(app, r[1]);
+  if ((r = m(/^\/kotsu\/(\d+)\/pos\/([A-Z0-9]+)$/)))                    return renderKotsuAreaList(app, r[1], r[2]);
+  if ((r = m(/^\/kotsu\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/capture$/))) return renderKotsuCapture(app, r[1], r[2], r[3]);
+  if ((r = m(/^\/kotsu\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/view\/(\d+)$/))) return renderKotsuView(app, r[1], r[2], r[3], r[4]);
   go('/');
 }
 
@@ -121,9 +126,12 @@ async function renderHome(app) {
         </div>
       </button>
 
-      <button class="btn btn-ghost" style="margin-top:12px; width:100%; border:1px solid rgba(255,255,255,0.1); color:var(--text); height:64px; display:flex; align-items:center; justify-content:center; gap:12px; background:rgba(255,255,255,0.03)" onclick="toast('Configuração pendente', 'info')">
+      <button class="btn btn-ghost" style="margin-top:12px; width:100%; border:1px solid rgba(255,60,60,0.3); color:var(--text); height:64px; display:flex; align-items:center; justify-content:center; gap:12px; background:rgba(255,40,40,0.06)" onclick="go('/kotsu/${ac.id}')">
         <img src="/static/kotsu-icon.png" style="width:40px; height:40px; object-fit:contain; border-radius:4px">
-        <span style="font-weight:600">Kotsu - Não Gerar</span>
+        <div style="text-align:left">
+          <div style="font-weight:600">Kotsu - Registrar Dano</div>
+          <div style="font-size:0.7rem;opacity:0.7;color:#ff9999">Dano manual sem foto de referência</div>
+        </div>
       </button>
 
       <div class="divider" style="margin:40px 0"></div>
@@ -1957,3 +1965,234 @@ async function submitFeedback(analysisId) {
   } catch(e) {}
 }
 
+
+/* ════════════════════════════════════════════════════════
+   KOTSU — Registro Manual de Dano (sem antes/depois)
+════════════════════════════════════════════════════════ */
+
+async function renderKotsuPosition(app, aircraftId) {
+  app.innerHTML = `<div class="app-header"><button class="btn-icon" onclick="go('/aircraft/${aircraftId}')">‹</button><h1>Kotsu — Posição</h1></div><div class="view"><div class="spinner" style="padding:40px"></div></div>`;
+  const ac = await API.get(`/api/aircraft/${aircraftId}/stats`).catch(() => ({}));
+  const positions = Object.keys(ac).filter(k => k !== 'aircraft_id');
+  app.innerHTML = `
+    <div class="app-header"><button class="btn-icon" onclick="go('/aircraft/${aircraftId}')">‹</button><h1>Kotsu — Posição</h1></div>
+    <div class="view">
+      <p style="color:var(--muted);font-size:0.8rem;margin-bottom:16px">Selecione a posição onde o dano Kotsu ocorreu.</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${positions.map(pos => `
+          <button class="card" style="display:flex;align-items:center;gap:12px;padding:16px;text-align:left;cursor:pointer;background:rgba(255,60,60,0.07);border:1px solid rgba(255,60,60,0.2)" onclick="go('/kotsu/${aircraftId}/pos/${pos}')">
+            <span style="font-size:1.4rem;font-weight:800;color:#ff5555">${pos}</span>
+            <span style="color:var(--text)">Posição ${pos}</span>
+            <span style="margin-left:auto;color:var(--muted)">›</span>
+          </button>`).join('')}
+      </div>
+    </div>`;
+}
+
+async function renderKotsuAreaList(app, aircraftId, position) {
+  app.innerHTML = `<div class="app-header"><button class="btn-icon" onclick="go('/kotsu/${aircraftId}')">‹</button><h1>Kotsu — ${position}</h1></div><div class="view"><div class="spinner" style="padding:40px"></div></div>`;
+  const [areas, kotsuList] = await Promise.all([
+    API.get(`/api/aircraft/${aircraftId}/position-areas?position=${position}`).catch(() => []),
+    API.get(`/api/kotsu/${aircraftId}?position=${position}`).catch(() => []),
+  ]);
+  const kotsuByArea = {};
+  (kotsuList || []).forEach(k => { if (!kotsuByArea[k.area_id]) kotsuByArea[k.area_id] = []; kotsuByArea[k.area_id].push(k); });
+  app.innerHTML = `
+    <div class="app-header"><button class="btn-icon" onclick="go('/kotsu/${aircraftId}')">‹</button><h1>Kotsu — ${position}</h1></div>
+    <div class="view">
+      <p style="color:var(--muted);font-size:0.8rem;margin-bottom:16px">Selecione a área afetada.</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${(areas || []).map(a => {
+          const list = kotsuByArea[a.id] || [];
+          const badge = list.length ? `<span style="background:#ff3333;color:#fff;font-size:0.7rem;padding:2px 8px;border-radius:20px;font-weight:700">🔴 ${list.length} Kotsu</span>` : '';
+          return `
+          <div class="card" style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08)">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:${list.length ? '10px' : '0'}">
+              <span style="flex:1;font-weight:600">${a.name}</span>${badge}
+              <button class="btn btn-primary" style="font-size:0.75rem;padding:6px 14px;min-height:34px;background:#ff3333;border-color:#ff3333"
+                      onclick="go('/kotsu/${aircraftId}/pos/${position}/area/${a.id}/capture')">+ Registrar</button>
+            </div>
+            ${list.map(k => `
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid rgba(255,255,255,0.06)">
+                <img src="${k.url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #ff3333">
+                <div style="flex:1"><div style="font-size:0.75rem;color:#ff9999;font-weight:600">⚠️ Kotsu</div><div style="font-size:0.7rem;color:var(--muted)">${fmtDate(k.captured_at)}</div></div>
+                <button class="btn btn-ghost" style="font-size:0.75rem;padding:4px 10px;min-height:30px" onclick="go('/kotsu/${aircraftId}/pos/${position}/area/${a.id}/view/${k.id}')">Ver</button>
+              </div>`).join('')}
+          </div>`;}).join('')}
+      </div>
+    </div>`;
+}
+
+let _kotsuStream = null, _kotsuDataUrl = null;
+
+function renderKotsuCapture(app, aircraftId, position, areaId) {
+  _kotsuDataUrl = null;
+  app.innerHTML = `
+    <div class="app-header"><button class="btn-icon" onclick="go('/kotsu/${aircraftId}/pos/${position}')">‹</button><h1>Kotsu — Foto</h1></div>
+    <div style="background:#000;width:100%;height:55vh;display:flex;align-items:center;justify-content:center">
+      <video id="kotsu-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover"></video>
+    </div>
+    <div class="view" style="text-align:center;padding-top:16px">
+      <p style="color:var(--muted);font-size:0.8rem;margin-bottom:16px">Após a foto você <b>deve marcar obrigatoriamente</b> a região do dano.</p>
+      <button class="btn btn-primary" style="min-height:50px;font-size:1rem;background:#ff3333;border-color:#ff3333" onclick="captureKotsuPhoto('${aircraftId}','${position}','${areaId}')">📷 Tirar Foto</button>
+    </div>`;
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+    .then(s => { _kotsuStream = s; document.getElementById('kotsu-video').srcObject = s; })
+    .catch(() => toast('Câmera indisponível', 'err'));
+}
+
+function captureKotsuPhoto(aircraftId, position, areaId) {
+  const video = document.getElementById('kotsu-video');
+  if (!video) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  _kotsuDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  if (_kotsuStream) { _kotsuStream.getTracks().forEach(t => t.stop()); _kotsuStream = null; }
+  renderKotsuDamageMarker(aircraftId, position, areaId, _kotsuDataUrl);
+}
+
+let _kotsuRegions = [], _kotsuDrawing = false, _kotsuStart = null, _kotsuCanvas = null, _kotsuCtx = null, _kotsuImg = null;
+
+function renderKotsuDamageMarker(aircraftId, position, areaId, dataUrl) {
+  _kotsuRegions = [];
+  const overlay = document.createElement('div');
+  overlay.id = 'damage-overlay';
+  overlay.innerHTML = `
+    <canvas id="kotsu-canvas" style="touch-action:none"></canvas>
+    <div class="camera-top-bar" style="display:flex;align-items:center;gap:10px;z-index:20;background:rgba(180,0,0,0.85)">
+      <span style="color:#fff;font-size:0.85rem;flex:1">⚠️ Marque OBRIGATORIAMENTE a região do dano</span>
+      <button class="btn btn-ghost btn-small" onclick="_kotsuRegions.pop();drawKotsuMarker()" style="padding:4px 8px;font-size:0.8rem;border-color:rgba(255,255,255,0.4);color:#fff">Desfazer</button>
+    </div>
+    <div class="camera-bottom-bar" style="position:absolute;bottom:0;left:0;right:0;z-index:20;display:flex;gap:16px;justify-content:center;padding:16px 24px calc(16px + env(safe-area-inset-bottom,16px));background:linear-gradient(to top,rgba(0,0,0,.85),transparent)">
+      <button class="btn btn-ghost" onclick="cancelKotsuMarker('${aircraftId}','${position}','${areaId}')" style="flex:0 1 130px">Cancelar</button>
+      <button class="btn btn-primary" id="kotsu-confirm-btn" onclick="confirmKotsuMarker('${aircraftId}','${position}','${areaId}')" style="flex:0 1 200px;background:#ff3333;border-color:#ff3333;opacity:0.4" disabled>✓ Registrar Dano</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  _kotsuCanvas = document.getElementById('kotsu-canvas');
+  _kotsuCtx = _kotsuCanvas.getContext('2d');
+  _kotsuImg = new Image();
+  _kotsuImg.onload = () => { _kotsuCanvas.width = window.innerWidth; _kotsuCanvas.height = window.innerHeight; drawKotsuMarker(); };
+  _kotsuImg.src = dataUrl;
+  _kotsuCanvas.addEventListener('pointerdown', kotsuPointerDown);
+  _kotsuCanvas.addEventListener('pointermove', kotsuPointerMove);
+  _kotsuCanvas.addEventListener('pointerup',   kotsuPointerUp);
+}
+
+function cancelKotsuMarker(aircraftId, position, areaId) {
+  document.getElementById('damage-overlay')?.remove();
+  renderKotsuCapture(document.getElementById('app'), aircraftId, position, areaId);
+}
+
+function drawKotsuMarker() {
+  if (!_kotsuCtx || !_kotsuImg) return;
+  const W = _kotsuCanvas.width, H = _kotsuCanvas.height;
+  _kotsuCtx.clearRect(0, 0, W, H);
+  const ir = _kotsuImg.naturalWidth / _kotsuImg.naturalHeight, cr = W / H;
+  let sw, sh, sx, sy;
+  if (ir > cr) { sh = H; sw = H * ir; sx = (W - sw) / 2; sy = 0; }
+  else         { sw = W; sh = W / ir; sx = 0; sy = (H - sh) / 2; }
+  window._kotsuMetrics = { sx, sy, sw, sh };
+  _kotsuCtx.drawImage(_kotsuImg, sx, sy, sw, sh);
+  _kotsuCtx.shadowColor = 'rgba(255,0,0,0.5)'; _kotsuCtx.shadowBlur = 8; _kotsuCtx.strokeStyle = '#ff3333'; _kotsuCtx.lineWidth = 3;
+  _kotsuRegions.forEach(r => {
+    const rx = sx + r.x * sw, ry = sy + r.y * sh, rw = r.w * sw, rh = r.h * sh;
+    _kotsuCtx.strokeRect(rx, ry, rw, rh);
+    const bs = 24, bx = rx + rw - bs/2, by = ry - bs/2;
+    _kotsuCtx.fillStyle = '#ff3333'; _kotsuCtx.beginPath(); _kotsuCtx.arc(bx+bs/2, by+bs/2, bs/2, 0, Math.PI*2); _kotsuCtx.fill();
+    _kotsuCtx.strokeStyle = '#fff'; _kotsuCtx.lineWidth = 2;
+    _kotsuCtx.beginPath(); _kotsuCtx.moveTo(bx+6,by+6); _kotsuCtx.lineTo(bx+bs-6,by+bs-6); _kotsuCtx.moveTo(bx+bs-6,by+6); _kotsuCtx.lineTo(bx+6,by+bs-6); _kotsuCtx.stroke();
+    r._btn = { bx, by, size: bs };
+  });
+  _kotsuCtx.shadowBlur = 0;
+  const btn = document.getElementById('kotsu-confirm-btn');
+  if (btn) { btn.disabled = _kotsuRegions.length === 0; btn.style.opacity = _kotsuRegions.length === 0 ? '0.4' : '1'; }
+}
+
+function kotsuPointerDown(e) {
+  const rect = _kotsuCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  for (let i = _kotsuRegions.length - 1; i >= 0; i--) {
+    const r = _kotsuRegions[i];
+    if (r._btn) { const { bx, by, size } = r._btn; if (mx >= bx && mx <= bx+size && my >= by && my <= by+size) { _kotsuRegions.splice(i,1); drawKotsuMarker(); return; } }
+  }
+  const { sx, sy, sw, sh } = window._kotsuMetrics;
+  _kotsuStart = { x: (mx-sx)/sw, y: (my-sy)/sh }; _kotsuDrawing = true;
+  _kotsuRegions.push({ x: _kotsuStart.x, y: _kotsuStart.y, w: 0, h: 0 });
+}
+function kotsuPointerMove(e) {
+  if (!_kotsuDrawing) return;
+  const rect = _kotsuCanvas.getBoundingClientRect();
+  const { sx, sy, sw, sh } = window._kotsuMetrics;
+  const cx = (e.clientX-rect.left-sx)/sw, cy = (e.clientY-rect.top-sy)/sh;
+  const cur = _kotsuRegions[_kotsuRegions.length-1];
+  cur.x = Math.min(_kotsuStart.x,cx); cur.y = Math.min(_kotsuStart.y,cy);
+  cur.w = Math.abs(cx-_kotsuStart.x); cur.h = Math.abs(cy-_kotsuStart.y);
+  drawKotsuMarker();
+}
+function kotsuPointerUp() {
+  _kotsuDrawing = false;
+  const cur = _kotsuRegions[_kotsuRegions.length-1];
+  if (cur && (cur.w < 0.01 || cur.h < 0.01)) { _kotsuRegions.pop(); drawKotsuMarker(); }
+}
+
+async function confirmKotsuMarker(aircraftId, position, areaId) {
+  if (_kotsuRegions.length === 0) { toast('Marque ao menos uma região de dano', 'err'); return; }
+  const btn = document.getElementById('kotsu-confirm-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+  try {
+    await API.post('/api/kotsu', {
+      aircraft_id: Number(aircraftId), area_id: Number(areaId), position,
+      image: _kotsuDataUrl,
+      damage_regions: _kotsuRegions.map(({ x, y, w, h }) => ({ x, y, w, h })),
+    });
+    document.getElementById('damage-overlay')?.remove();
+    toast('✅ Kotsu registrado com sucesso!', 'ok');
+    go(`/kotsu/${aircraftId}/pos/${position}`);
+  } catch(e) { if (btn) { btn.disabled = false; btn.textContent = '✓ Registrar Dano'; btn.style.opacity = '1'; } }
+}
+
+async function renderKotsuView(app, aircraftId, position, areaId, photoId) {
+  const backUrl = `/kotsu/${aircraftId}/pos/${position}`;
+  app.innerHTML = `<div class="app-header"><button class="btn-icon" onclick="go('${backUrl}')">‹</button><h1>Kotsu — Detalhe</h1></div><div class="view"><div class="spinner" style="padding:40px"></div></div>`;
+  const list = await API.get(`/api/kotsu/${aircraftId}?position=${position}&area_id=${areaId}`).catch(() => []);
+  const photo = (list || []).find(k => String(k.id) === String(photoId));
+  if (!photo) { go(backUrl); return; }
+  app.innerHTML = `
+    <div class="app-header"><button class="btn-icon" onclick="go('${backUrl}')">‹</button><h1>Kotsu — Detalhe</h1></div>
+    <div style="background:#000;width:100%;min-height:45vh;display:flex;align-items:center;justify-content:center;overflow:hidden">
+      <canvas id="kotsu-view-canvas" style="max-width:100%;max-height:60vh;display:block;cursor:pointer" onclick="window.open('${photo.url}','_blank')"></canvas>
+    </div>
+    <div class="view" style="text-align:center;padding-top:12px">
+      <div style="background:rgba(255,50,50,0.12);border:1px solid #ff3333;border-radius:12px;padding:10px;margin-bottom:16px">
+        <span style="color:#ff5555;font-weight:700;font-size:1rem">🔴 Dano Kotsu Registrado</span>
+      </div>
+      <p style="color:var(--muted);font-size:0.8rem;margin-bottom:16px">${fmtDate(photo.captured_at)}</p>
+      <div style="display:flex;gap:10px;justify-content:center;align-items:center">
+        <button class="btn btn-primary" style="flex:1;min-height:44px;background:#ff3333;border-color:#ff3333"
+                onclick="go('/kotsu/${aircraftId}/pos/${position}/area/${areaId}/capture')">📷 Tirar novamente</button>
+        <button class="btn btn-ghost" style="width:50px;height:44px;display:flex;align-items:center;justify-content:center;border-color:#ff3333;color:#ff3333;padding:0"
+                onclick="deleteKotsuPhoto(${photo.id},'${backUrl}')">🗑️</button>
+      </div>
+    </div>`;
+  const canvas = document.getElementById('kotsu-view-canvas');
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.onload = () => {
+    canvas.width = img.naturalWidth; canvas.height = img.naturalHeight; ctx.drawImage(img, 0, 0);
+    if (photo.manual_damage_regions?.length > 0) {
+      ctx.strokeStyle = '#ff3333'; ctx.lineWidth = Math.max(4, img.naturalWidth/200);
+      ctx.shadowColor = 'rgba(255,0,0,0.5)'; ctx.shadowBlur = 10;
+      photo.manual_damage_regions.forEach(r => ctx.strokeRect(r.x*canvas.width, r.y*canvas.height, r.w*canvas.width, r.h*canvas.height));
+    }
+  };
+  img.src = photo.url;
+}
+
+async function deleteKotsuPhoto(photoId, backUrl) {
+  if (!confirm('Tem certeza que deseja excluir este registro Kotsu permanentemente?')) return;
+  try {
+    const res = await API.del(`/api/photos/${photoId}`);
+    if (res?.ok) { toast('Registro Kotsu excluído', 'ok'); go(backUrl); }
+  } catch(e) {}
+}
