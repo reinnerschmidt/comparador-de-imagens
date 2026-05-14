@@ -63,6 +63,8 @@ function route() {
   if (h === '/aircraft/new')                  return renderNewAircraft(app);
   if (h === '/area/new')                      return renderNewArea(app);
   if (h === '/global-area/new')               return renderNewGlobalArea(app);
+  if (h === '/global-areas')                  return renderGlobalAreaList(app);
+  if (h === '/models')                        return renderModelList(app);
   if ((r = m(/^\/global-area\/(\d+)$/)))      return renderGlobalAreaDetail(app, r[1]);
   if ((r = m(/^\/aircraft\/(\d+)$/)))         return renderAircraftDetail(app, r[1]);
   if ((r = m(/^\/area\/(\d+)\/mask$/)))       return renderMaskEditor(app, r[1]);
@@ -128,14 +130,18 @@ async function renderHome(app) {
 
       <!-- Gestão Rápida -->
       <div class="section-label">Gestão de Modelos e Áreas</div>
-      <div class="cards-grid" style="grid-template-columns: 1fr 1fr;">
-        <div class="card" onclick="go('/aircrafts')" style="flex-direction:column; padding:20px; text-align:center; gap:8px">
-          <img src="/static/embraer-e2.png" style="width:60px; height:36px; object-fit:contain; margin: 4px auto">
-          <div class="card-title">Aeronaves</div>
+      <div class="cards-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+        <div class="card" onclick="go('/aircrafts')" style="flex-direction:column; padding:12px; text-align:center; gap:8px">
+          <img src="/static/embraer-e2.png" style="width:100%; height:28px; object-fit:contain">
+          <div class="card-title" style="font-size:0.7rem">Aeronaves</div>
         </div>
-        <div class="card" onclick="go('/global-area/new')" style="flex-direction:column; padding:20px; text-align:center; gap:8px">
-          <span style="font-size:1.8rem">📂</span>
-          <div class="card-title">Global Areas</div>
+        <div class="card" onclick="go('/global-areas')" style="flex-direction:column; padding:12px; text-align:center; gap:8px">
+          <span style="font-size:1.4rem">📂</span>
+          <div class="card-title" style="font-size:0.7rem">Áreas Globais</div>
+        </div>
+        <div class="card" onclick="go('/models')" style="flex-direction:column; padding:12px; text-align:center; gap:8px">
+          <span style="font-size:1.4rem">📐</span>
+          <div class="card-title" style="font-size:0.7rem">Modelos</div>
         </div>
       </div>
     </div>`;
@@ -254,28 +260,12 @@ async function renderAircraftList(app) {
       <h1 style="font-size:1.1rem">${phase}</h1>
     </div>
     <div class="view">
-      <div class="section-label">Aeronaves</div>
+      <div class="section-label">Selecione a aeronave</div>
       <div id="home-aircraft" class="cards-grid"><div class="spinner"></div></div>
       <button class="btn btn-ghost" onclick="go('/aircraft/new')" style="margin-top:8px">+ Nova aeronave</button>
-
-      <div class="divider" style="margin:24px 0"></div>
-
-      <div class="section-label">Áreas (Globais)</div>
-      <div id="home-global-areas" class="cards-grid"><div class="spinner"></div></div>
-      <button class="btn btn-ghost" onclick="go('/global-area/new')" style="margin-top:8px">+ Nova área global</button>
-
-      <div class="divider" style="margin:24px 0"></div>
-
-      <div class="section-label">Modelos de Máscara (Globais)</div>
-      <div id="home-areas" class="cards-grid"><div class="spinner"></div></div>
-      <button class="btn btn-ghost" onclick="go('/area/new')" style="margin-top:8px">+ Novo modelo global</button>
     </div>`;
 
-  const [aircraft, areas, globalAreas] = await Promise.all([
-    API.get('/api/aircraft').catch(() => []),
-    API.get('/api/areas').catch(() => []),
-    API.get('/api/global_areas').catch(() => []),
-  ]);
+  const aircraft = await API.get('/api/aircraft').catch(() => []);
 
   const acList = document.getElementById('home-aircraft');
   if (!aircraft.length) {
@@ -300,9 +290,26 @@ async function renderAircraftList(app) {
       </div>`).join('');
   }
 
-  const gaList = document.getElementById('home-global-areas');
+  }
+}
+
+async function renderGlobalAreaList(app) {
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/')">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
+      <h1>Áreas Globais</h1>
+    </div>
+    <div class="view">
+      <div id="list-global-areas" class="cards-grid"><div class="spinner"></div></div>
+      <button class="btn btn-ghost" onclick="go('/global-area/new')" style="margin-top:16px; width:100%">+ Nova área global</button>
+    </div>`;
+
+  const globalAreas = await API.get('/api/global_areas').catch(() => []);
+  const gaList = document.getElementById('list-global-areas');
   if (!globalAreas.length) {
-    gaList.innerHTML = `<p style="color:var(--muted);font-size:0.85rem">Nenhuma área global criada.</p>`;
+    gaList.innerHTML = `<p style="color:var(--muted);text-align:center;padding:20px">Nenhuma área global criada.</p>`;
   } else {
     gaList.innerHTML = globalAreas.map(ga => `
       <div class="card" onclick="go('/global-area/${ga.id}')">
@@ -313,10 +320,25 @@ async function renderAircraftList(app) {
         <span style="color:var(--muted);font-size:1.2rem">›</span>
       </div>`).join('');
   }
+}
 
-  const arList = document.getElementById('home-areas');
+async function renderModelList(app) {
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/')">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
+      <h1>Modelos de Máscara</h1>
+    </div>
+    <div class="view">
+      <div id="list-models" class="cards-grid"><div class="spinner"></div></div>
+      <button class="btn btn-ghost" onclick="go('/area/new')" style="margin-top:16px; width:100%">+ Novo modelo global</button>
+    </div>`;
+
+  const areas = await API.get('/api/areas').catch(() => []);
+  const arList = document.getElementById('list-models');
   if (!areas.length) {
-    arList.innerHTML = `<p style="color:var(--muted);font-size:0.85rem">Nenhum modelo de máscara criado.</p>`;
+    arList.innerHTML = `<p style="color:var(--muted);text-align:center;padding:20px">Nenhum modelo de máscara criado.</p>`;
   } else {
     arList.innerHTML = areas.map(a => `
       <div class="card" onclick="go('/area/${a.id}')">
