@@ -811,44 +811,53 @@ def list_kotsu(aircraft_id: int):
 
 @app.route("/api/stats/dashboard")
 def dashboard_stats():
+    aircraft_id = request.args.get("aircraft_id")
+    where_p = f" AND p.aircraft_id = {PH}" if aircraft_id else ""
+    where_ac = f" WHERE p.aircraft_id = {PH}" if aircraft_id else ""
+    params = (aircraft_id,) if aircraft_id else ()
+
     with db_conn() as conn:
-        # Total damages (confirmed or manual or kotsu)
-        # has_damage_check = 2 means confirmed damage
-        total_damage = fetchone(conn, f"SELECT COUNT(*) as count FROM inspection_photos WHERE has_damage_check = 2")["count"]
+        # Total damages
+        sql_total = f"SELECT COUNT(*) as count FROM inspection_photos p WHERE p.has_damage_check = 2 {where_p}"
+        total_damage = fetchone(conn, sql_total, params)["count"]
         
-        # Damage by phase (including Kotsu)
-        by_phase = fetchall(conn, f"SELECT phase as label, COUNT(*) as count FROM inspection_photos WHERE has_damage_check = 2 GROUP BY phase")
+        # Damage by phase
+        sql_phase = f"SELECT p.phase as label, COUNT(*) as count FROM inspection_photos p WHERE p.has_damage_check = 2 {where_p} GROUP BY p.phase"
+        by_phase = fetchall(conn, sql_phase, params)
         
         # Damage by aircraft
+        # Note: by_aircraft always shows all aircraft to allow selection
         by_aircraft = fetchall(conn, f"""
-            SELECT ac.serial as label, COUNT(p.id) as count 
+            SELECT ac.id, ac.serial as label, COUNT(p.id) as count 
             FROM aircraft ac
-            JOIN inspection_photos p ON ac.id = p.aircraft_id AND p.has_damage_check = 2
+            LEFT JOIN inspection_photos p ON ac.id = p.aircraft_id AND p.has_damage_check = 2
             GROUP BY ac.id, ac.serial
             ORDER BY count DESC
         """)
         
         # Damage by Area (Global Areas)
-        by_global_area = fetchall(conn, f"""
+        sql_areas = f"""
             SELECT ga.id, ga.name as label, COUNT(p.id) as count 
             FROM global_areas ga
             JOIN global_area_subareas gas ON ga.id = gas.global_area_id
-            JOIN inspection_photos p ON gas.subarea_id = p.area_id AND p.has_damage_check = 2
+            JOIN inspection_photos p ON gas.subarea_id = p.area_id AND p.has_damage_check = 2 {where_p}
             GROUP BY ga.id, ga.name
             ORDER BY count DESC
-        """)
+        """
+        by_global_area = fetchall(conn, sql_areas, params)
         
         # Sub-area details
-        subareas = fetchall(conn, f"""
+        sql_sub = f"""
             SELECT gas.global_area_id, a.name as label, COUNT(p.id) as count 
             FROM global_areas ga
             JOIN global_area_subareas gas ON ga.id = gas.global_area_id
             JOIN areas a ON gas.subarea_id = a.id
-            LEFT JOIN inspection_photos p ON a.id = p.area_id AND p.has_damage_check = 2
+            LEFT JOIN inspection_photos p ON a.id = p.area_id AND p.has_damage_check = 2 {where_p}
             GROUP BY gas.global_area_id, a.id, a.name
             HAVING COUNT(p.id) > 0
             ORDER BY count DESC
-        """)
+        """
+        subareas = fetchall(conn, sql_sub, params)
         
     return jsonify({
         "total": total_damage,

@@ -2339,16 +2339,23 @@ async function deleteKotsuPhoto(photoId, backUrl) {
 /* ════════════════════════════════════════════
    DASHBOARD — Indicadores e Gráficos
 ════════════════════════════════════════════ */
-async function renderDashboard(app) {
+async function renderDashboard(app, aircraftIdFilter = null) {
   app.innerHTML = `
     <div class="app-header">
       <button class="btn-icon" onclick="go('/')" title="Voltar">‹</button>
       <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
       <div class="header-logo-divider"></div>
-      <h1>Dashboard de Danos</h1>
+      <h1>Dashboard de Danos ${aircraftIdFilter ? ' — Detalhe' : ''}</h1>
       <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
     </div>
     <div class="view" style="padding-bottom: 40px">
+      ${aircraftIdFilter ? `
+        <div style="margin-bottom:16px; display:flex; align-items:center; gap:12px; background:rgba(26,86,219,0.1); padding:10px 16px; border-radius:8px; border:1px solid rgba(26,86,219,0.3)">
+          <span style="color:var(--accent-light); font-weight:600; font-size:0.9rem">📍 Filtrando por Aeronave</span>
+          <button class="btn btn-ghost btn-small" onclick="renderDashboard(document.getElementById('app'), null)" 
+                  style="padding:4px 12px; border-color:var(--accent); color:var(--accent); font-size:0.8rem; background:rgba(26,86,219,0.05)">✖ Limpar Filtro</button>
+        </div>` : ''}
+      
       <div class="cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; padding-top: 10px">
         
         <!-- Gráfico por Fase -->
@@ -2361,6 +2368,7 @@ async function renderDashboard(app) {
         <div class="card" style="flex-direction:column; padding:24px; align-items:stretch; background:var(--surface)">
           <div class="section-label" style="margin-bottom:20px">Danos por Aeronave</div>
           <div style="height:220px"><canvas id="chart-aircraft"></canvas></div>
+          ${!aircraftIdFilter ? '<p style="font-size:0.7rem; color:var(--muted); text-align:center; margin-top:10px">💡 Clique em uma aeronave para filtrar o dashboard</p>' : ''}
         </div>
 
         <!-- Gráfico por Áreas -->
@@ -2379,16 +2387,31 @@ async function renderDashboard(app) {
       </div>
     </div>`;
 
-  const stats = await API.get('/api/stats/dashboard').catch(() => null);
+  const url = aircraftIdFilter ? `/api/stats/dashboard?aircraft_id=${aircraftIdFilter}` : '/api/stats/dashboard';
+  const stats = await API.get(url).catch(() => null);
   if (!stats) return;
 
   // Configurações globais do Chart.js para o tema escuro
   if (window.Chart) {
     Chart.defaults.color = '#94a3b8';
     Chart.defaults.borderColor = 'rgba(255,255,255,0.1)';
+    
+    // Configurações comuns para DataLabels
+    const datalabelsConfig = {
+      anchor: 'end',
+      align: 'top',
+      offset: 4,
+      font: { weight: 'bold', size: 11 },
+      color: '#fff',
+      formatter: (val) => val > 0 ? val : ''
+    };
+
+    // Plugin local para registrar DataLabels em cada gráfico se disponível
+    const plugins = window.ChartDataLabels ? [ChartDataLabels] : [];
 
     new Chart(document.getElementById('chart-phase'), {
       type: 'doughnut',
+      plugins: plugins,
       data: {
         labels: stats.by_phase.map(p => p.label),
         datasets: [{
@@ -2400,32 +2423,50 @@ async function renderDashboard(app) {
       options: { 
         responsive: true, 
         maintainAspectRatio: false,
-        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15 } } }
+        plugins: { 
+          legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15 } },
+          datalabels: {
+            color: '#fff',
+            font: { weight: 'bold' },
+            formatter: (val, ctx) => {
+              const label = ctx.chart.data.labels[ctx.dataIndex];
+              return val > 0 ? `${val}` : '';
+            }
+          }
+        }
       }
     });
 
     new Chart(document.getElementById('chart-aircraft'), {
       type: 'bar',
+      plugins: plugins,
       data: {
         labels: stats.by_aircraft.map(a => a.label),
         datasets: [{
           label: 'Danos',
           data: stats.by_aircraft.map(a => a.count),
-          backgroundColor: '#1a56db',
+          backgroundColor: stats.by_aircraft.map(a => Number(a.id) === Number(aircraftIdFilter) ? '#3b82f6' : '#1a56db'),
           borderRadius: 6
         }]
       },
       options: { 
         responsive: true, 
         maintainAspectRatio: false, 
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } 
+        plugins: { legend: { display: false }, datalabels: datalabelsConfig },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, display: false }, grid: { display: false } } },
+        onClick: (e, activeEls) => {
+          if (activeEls.length > 0) {
+            const idx = activeEls[0].index;
+            const ac = stats.by_aircraft[idx];
+            renderDashboard(document.getElementById('app'), ac.id);
+          }
+        }
       }
     });
 
-    const ctxAreas = document.getElementById('chart-areas');
-    new Chart(ctxAreas, {
+    new Chart(document.getElementById('chart-areas'), {
       type: 'bar',
+      plugins: plugins,
       data: {
         labels: stats.by_global_area.map(a => a.label),
         datasets: [{
@@ -2438,8 +2479,8 @@ async function renderDashboard(app) {
       options: { 
         responsive: true, 
         maintainAspectRatio: false, 
-        plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        plugins: { legend: { display: false }, datalabels: datalabelsConfig },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, display: false }, grid: { display: false } } },
         onClick: (e, activeEls) => {
           if (activeEls.length > 0) {
             const idx = activeEls[0].index;
@@ -2462,6 +2503,7 @@ async function renderDashboard(app) {
       
       subareaChart = new Chart(ctxSub, {
         type: 'bar',
+        plugins: plugins,
         data: {
           labels: filtered.map(s => s.label),
           datasets: [{
@@ -2474,8 +2516,8 @@ async function renderDashboard(app) {
         options: { 
           responsive: true, 
           maintainAspectRatio: false, 
-          plugins: { legend: { display: false } },
-          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } 
+          plugins: { legend: { display: false }, datalabels: datalabelsConfig },
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1, display: false }, grid: { display: false } } } 
         }
       });
     };
