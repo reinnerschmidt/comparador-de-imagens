@@ -1863,10 +1863,35 @@ async function renderFeedback(app, analysisId) {
       <button class="btn-icon" onclick="history.back()">‹</button>
       <h1>Avaliar Análise</h1>
     </div>
+    <div class="view"><div class="spinner" style="padding:40px"></div></div>`;
+
+  // Carrega dados da análise para saber se detectou dano
+  const analysis = await API.get(`/api/analyses/${analysisId}`).catch(() => null);
+  const hasDamage = analysis && analysis.status !== 'OK';
+
+  // Reset state
+  _fb.cls = null; _fb.loc = null; _fb.region = null;
+  _fb.hasDamage = hasDamage;
+
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="history.back()">‹</button>
+      <h1>Avaliar Análise</h1>
+    </div>
     <div class="view">
       <p style="color:var(--muted);font-size:0.9rem;margin-bottom:20px">
         Sua avaliação ajuda a treinar o modelo de IA para inspeções futuras.
       </p>
+
+      ${hasDamage
+        ? `<div style="background:rgba(255,60,60,0.1);border:1px solid rgba(255,60,60,0.3);border-radius:10px;padding:12px;margin-bottom:20px;display:flex;align-items:center;gap:10px">
+             <span style="font-size:1.3rem">⚠️</span>
+             <span style="color:#ff9999;font-size:0.85rem">A IA identificou <b>possível dano</b> nesta região.</span>
+           </div>`
+        : `<div style="background:rgba(60,180,60,0.1);border:1px solid rgba(60,180,60,0.3);border-radius:10px;padding:12px;margin-bottom:20px;display:flex;align-items:center;gap:10px">
+             <span style="font-size:1.3rem">✅</span>
+             <span style="color:#7ddb7d;font-size:0.85rem">A IA classificou esta região como <b>íntegra</b>.</span>
+           </div>`}
 
       <div class="section-label">A classificação está correta?</div>
       <div style="display:flex; gap:10px; margin-bottom:20px;">
@@ -1874,10 +1899,12 @@ async function renderFeedback(app, analysisId) {
         <button class="btn btn-ghost" id="cls-no"  onclick="setFeedback('cls', false)">❌ Não</button>
       </div>
 
-      <div class="section-label">O local do dano está correto?</div>
-      <div style="display:flex; gap:10px; margin-bottom:12px;">
-        <button class="btn btn-ghost" id="loc-yes" onclick="setFeedback('loc', true)">✅ Sim</button>
-        <button class="btn btn-ghost" id="loc-no"  onclick="setFeedback('loc', false)">❌ Não (marcar correto)</button>
+      <div id="loc-section" style="display:none;">
+        <div class="section-label">O local do dano está correto?</div>
+        <div style="display:flex; gap:10px; margin-bottom:12px;">
+          <button class="btn btn-ghost" id="loc-yes" onclick="setFeedback('loc', true)">✅ Sim</button>
+          <button class="btn btn-ghost" id="loc-no"  onclick="setFeedback('loc', false)">❌ Não (marcar correto)</button>
+        </div>
       </div>
 
       <div id="region-editor" style="display:none; margin-bottom:16px;">
@@ -1896,8 +1923,7 @@ async function renderFeedback(app, analysisId) {
     </div>`;
 
   // Carrega heatmap como background do canvas de feedback
-  const r = await API.get(`/api/analyses/${analysisId}`).catch(() => null);
-  if (r?.heatmap_url) {
+  if (analysis?.heatmap_url) {
     const canvas = document.getElementById('fb-canvas');
     const img    = new Image();
     img.crossOrigin = 'anonymous';
@@ -1908,22 +1934,51 @@ async function renderFeedback(app, analysisId) {
       canvas.getContext('2d').drawImage(img, 0, 0);
       attachFbDraw(canvas);
     };
-    img.src = r.heatmap_url;
+    img.src = analysis.heatmap_url;
   }
 }
 
-const _fb = { cls: null, loc: null, region: null };
+const _fb = { cls: null, loc: null, region: null, hasDamage: false };
 
 function setFeedback(key, val) {
   _fb[key] = val;
   const yes = document.getElementById(`${key}-yes`);
   const no  = document.getElementById(`${key}-no`);
-  yes.classList.toggle('btn-primary', val === true);
-  yes.classList.toggle('btn-ghost',   val !== true);
-  no.classList.toggle('btn-primary',  val === false);
-  no.classList.toggle('btn-ghost',    val !== false);
+  if (yes && no) {
+    yes.classList.toggle('btn-primary', val === true);
+    yes.classList.toggle('btn-ghost',   val !== true);
+    no.classList.toggle('btn-primary',  val === false);
+    no.classList.toggle('btn-ghost',    val !== false);
+  }
+
+  if (key === 'cls') {
+    const locSection = document.getElementById('loc-section');
+    const regionEditor = document.getElementById('region-editor');
+    // Mostra pergunta de local APENAS se:
+    // - A análise detectou dano E o usuário confirma (cls=true)
+    // - OU a análise NÃO detectou dano E o usuário diz que está errado (cls=false, ou seja, tem dano sim)
+    const showLocQuestion = (_fb.hasDamage && val === true) || (!_fb.hasDamage && val === false);
+
+    if (showLocQuestion) {
+      locSection.style.display = 'block';
+    } else {
+      locSection.style.display = 'none';
+      regionEditor.style.display = 'none';
+      _fb.loc = null;
+      _fb.region = null;
+      // Reset visual dos botões loc
+      const locYes = document.getElementById('loc-yes');
+      const locNo  = document.getElementById('loc-no');
+      if (locYes) { locYes.classList.remove('btn-primary'); locYes.classList.add('btn-ghost'); }
+      if (locNo)  { locNo.classList.remove('btn-primary');  locNo.classList.add('btn-ghost'); }
+    }
+  }
+
   if (key === 'loc' && val === false) {
     document.getElementById('region-editor').style.display = 'block';
+  } else if (key === 'loc' && val === true) {
+    document.getElementById('region-editor').style.display = 'none';
+    _fb.region = null;
   }
 }
 
@@ -1954,13 +2009,15 @@ function attachFbDraw(canvas) {
 
 async function submitFeedback(analysisId) {
   if (_fb.cls === null) { toast('Responda se a classificação está correta', 'err'); return; }
-  if (_fb.loc === null) { toast('Responda se o local está correto', 'err'); return; }
+  // Só exige resposta de local se a seção está visível
+  const locVisible = document.getElementById('loc-section')?.style.display !== 'none';
+  if (locVisible && _fb.loc === null) { toast('Responda se o local do dano está correto', 'err'); return; }
   const notes = document.getElementById('fb-notes')?.value.trim() || '';
   try {
     await API.post('/api/feedback', {
       analysis_id:             parseInt(analysisId),
       classification_correct:  _fb.cls,
-      damage_location_correct: _fb.loc,
+      damage_location_correct: locVisible ? _fb.loc : null,
       corrected_region:        _fb.region || null,
       notes,
     });
