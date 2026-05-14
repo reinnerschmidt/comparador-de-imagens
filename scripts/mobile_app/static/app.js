@@ -119,8 +119,9 @@ async function renderHome(app) {
         </div>
       </button>
 
-      <button class="btn btn-ghost" style="margin-top:12px; width:100%; border:1px dashed rgba(255,255,255,0.2); color:var(--muted); height:48px" onclick="toast('Configuração pendente', 'info')">
-        🚧 Kotsu - Não Gerar
+      <button class="btn btn-ghost" style="margin-top:12px; width:100%; border:1px solid rgba(255,255,255,0.1); color:var(--text); height:64px; display:flex; align-items:center; justify-content:center; gap:12px; background:rgba(255,255,255,0.03)" onclick="toast('Configuração pendente', 'info')">
+        <img src="/static/kotsu-icon.png" style="width:40px; height:40px; object-fit:contain; border-radius:4px">
+        <span style="font-weight:600">Kotsu - Não Gerar</span>
       </button>
 
       <div class="divider" style="margin:40px 0"></div>
