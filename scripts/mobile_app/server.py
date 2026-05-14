@@ -679,7 +679,7 @@ def create_kotsu_custom_area():
         
     with db_conn() as conn:
         # 1. Criar a área
-        sql_area = f"INSERT INTO areas (name, is_kotsu_only) VALUES ({PH}, 1) RETURNING id"
+        sql_area = f"INSERT INTO areas (name, is_kotsu_only) VALUES ({PH}, 1)"
         area_id = execute_returning(conn, sql_area, (name,))
         
         # 2. Encontrar ou criar uma área global para custom Kotsu
@@ -693,7 +693,7 @@ def create_kotsu_custom_area():
         
         if not ga:
             # Se não tiver área global ativa, cria uma genérica "Outras Áreas"
-            sql_gen = f"INSERT INTO global_areas (name) VALUES ('Outras Áreas (Kotsu)') RETURNING id"
+            sql_gen = f"INSERT INTO global_areas (name) VALUES ('Outras Áreas (Kotsu)')"
             ga_id = execute_returning(conn, sql_gen)
             # Ativa para esta posição
             conn.cursor().execute(
