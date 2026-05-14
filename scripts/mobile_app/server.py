@@ -570,13 +570,14 @@ def delete_global_area(ga_id: int):
 
 @app.route("/api/global_areas/<int:ga_id>/subareas")
 def list_global_area_subareas(ga_id: int):
+    val_false = "FALSE" if DB_URL else "0"
     with db_conn() as conn:
         subs = fetchall(
             conn,
             f"SELECT a.id, a.name, a.mask_thumb FROM areas a "
             f"JOIN global_area_subareas gas ON gas.subarea_id = a.id "
             f"WHERE gas.global_area_id={PH} "
-            f"AND (a.is_kotsu_only IS NULL OR a.is_kotsu_only = 0) "
+            f"AND (a.is_kotsu_only IS NULL OR a.is_kotsu_only = {val_false}) "
             f"ORDER BY a.name",
             (ga_id,)
         )
