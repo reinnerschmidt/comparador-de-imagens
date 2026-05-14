@@ -627,14 +627,36 @@ def list_position_areas(aircraft_id: int, position: str):
         )
         for g in groups:
             # Para cada área global, traz as subáreas que pertencem a ela
+            # 'has_historical_damage' verifica se já houve dano confirmado nesta área em QUALQUER fase
             g["subareas"] = fetchall(
                 conn,
-                f"SELECT a.id, a.name, a.mask_thumb FROM areas a "
-                f"JOIN global_area_subareas gas ON gas.subarea_id = a.id "
-                f"WHERE gas.global_area_id={PH} ORDER BY a.name",
-                (g["id"],)
+                f"""
+                SELECT a.id, a.name, a.mask_thumb,
+                       EXISTS(
+                           SELECT 1 FROM inspection_photos ip 
+                           WHERE ip.aircraft_id={PH} AND ip.area_id=a.id AND ip.has_damage_check=2
+                       ) as has_historical_damage
+                FROM areas a 
+                JOIN global_area_subareas gas ON gas.subarea_id = a.id 
+                WHERE gas.global_area_id={PH} ORDER BY a.name
+                """,
+                (aircraft_id, g["id"])
             )
     return jsonify(groups)
+
+
+@app.route("/api/aircraft/<int:aircraft_id>/areas/<int:area_id>/history")
+def get_area_history(aircraft_id: int, area_id: int):
+    """Retorna fotos com dano confirmado para uma área em qualquer fase."""
+    with db_conn() as conn:
+        rows = fetchall(conn,
+            f"SELECT id, url, phase, captured_at, has_damage_check, manual_damage_regions "
+            f"FROM inspection_photos "
+            f"WHERE aircraft_id={PH} AND area_id={PH} AND has_damage_check=2 "
+            f"ORDER BY captured_at DESC",
+            (aircraft_id, area_id)
+        )
+    return jsonify(rows)
 
 @app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/areas", methods=["POST"])
 def activate_position_area(aircraft_id: int, position: str):

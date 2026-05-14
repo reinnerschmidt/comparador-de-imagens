@@ -701,19 +701,24 @@ async function renderPositionDetail(app, aircraftId, position) {
           <button class="btn-icon" style="color:var(--danger)" onclick="deactivateArea(${aircraftId}, '${position}', ${g.id})">✕</button>
         </div>
         <div style="padding:8px; display:flex; flex-direction:column; gap:4px;">
-          ${g.subareas.map(sa => `
+          ${g.subareas.map(sa => {
+            const hasDamageNow = photoStatsMap[sa.id]?.hasDamage;
+            const hasHistory = !!sa.has_historical_damage;
+            let statusHtml = '';
+            if (hasDamageNow) statusHtml = '<span style="color:var(--danger);font-weight:700">⚠️ Com Dano</span>';
+            else if (hasHistory) statusHtml = '<span style="color:#f2a154;font-weight:700">📍 Histórico: Dano</span>';
+            else statusHtml = photoStatsMap[sa.id]?.hasPhotos ? '✅ Com fotos' : '📸 Sem fotos';
+
+            return `
             <div class="card" style="background:transparent; border:none; padding:8px 12px;" onclick="go('/aircraft/${aircraftId}/pos/${position}/area/${sa.id}')">
               ${sa.mask_thumb ? `<img src="${sa.mask_thumb}" style="width:32px;height:32px;border-radius:4px;object-fit:cover;margin-right:12px;">` : `<span style="margin-right:12px;">📐</span>`}
               <div class="card-body">
                 <div class="card-title" style="font-size:0.9rem">${esc(sa.name)}</div>
-                <div class="card-sub" style="font-size:0.75rem">
-                  ${photoStatsMap[sa.id]?.hasDamage ? '<span style="color:var(--danger);font-weight:700">⚠️ Com Dano</span>' : 
-                    photoStatsMap[sa.id]?.hasPhotos ? '✅ Com fotos' : '📸 Sem fotos'}
-                </div>
+                <div class="card-sub" style="font-size:0.75rem">${statusHtml}</div>
               </div>
               <span style="color:var(--muted)">›</span>
-            </div>
-          `).join('')}
+            </div>`;
+          }).join('')}
         </div>
       </div>`).join('');
   }
@@ -724,18 +729,23 @@ async function renderPositionDetail(app, aircraftId, position) {
   if (!freeAreas.length) {
     grid.innerHTML = `<div class="no-mask-banner" style="grid-column: 1/-1;">Todas as sub-áreas estão em pastas.</div>`;
   } else {
-    grid.innerHTML = freeAreas.map(a => `
+    grid.innerHTML = freeAreas.map(a => {
+      // Nota: freeAreas ainda não tem sa.has_historical_damage pois vem de /api/areas
+      // Mas freeAreas raramente são usadas em produção
+      const hasDamageNow = photoStatsMap[a.id]?.hasDamage;
+      let statusHtml = hasDamageNow ? '<span style="color:var(--danger);font-weight:700">⚠️ Com Dano</span>' : 
+                       (photoStatsMap[a.id]?.hasPhotos ? '✅ Com fotos' : '📸 Sem fotos');
+
+      return `
       <div class="card" onclick="go('/aircraft/${aircraftId}/pos/${position}/area/${a.id}')">
         ${a.mask_thumb ? `<img class="card-thumb" src="${a.mask_thumb}">` : `<span class="card-icon">📐</span>`}
         <div class="card-body">
           <div class="card-title">${esc(a.name)}</div>
-          <div class="card-sub">
-            ${photoStatsMap[a.id]?.hasDamage ? '<span style="color:var(--danger);font-weight:700">⚠️ Com Dano</span>' : 
-              photoStatsMap[a.id]?.hasPhotos ? '✅ Com fotos' : '📸 Sem fotos'}
-          </div>
+          <div class="card-sub">${statusHtml}</div>
         </div>
         <span style="color:var(--muted);font-size:1.2rem">›</span>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
 }
 
@@ -1025,10 +1035,11 @@ async function renderAreaDetail(app, templateId, aircraftId, position) {
   const phase = getPhase();
   const phaseEnc = encodeURIComponent(phase);
   const posQ = position ? `?position=${position}&phase=${phaseEnc}` : `?phase=${phaseEnc}`;
-  const [ac, photos, analyses] = await Promise.all([
+  const [ac, photos, analyses, history] = await Promise.all([
     API.get('/api/aircraft').then(list => list.find(a => a.id == aircraftId) || {}),
     API.get(`/api/aircraft/${aircraftId}/areas/${templateId}/photos${posQ}`).catch(() => ({before:null,after:null})),
     API.get(`/api/aircraft/${aircraftId}/areas/${templateId}/analyses${posQ}`).catch(() => []),
+    API.get(`/api/aircraft/${aircraftId}/areas/${templateId}/history`).catch(() => []),
   ]);
 
   const lastAnalysis = analyses[0] || null;
@@ -1083,6 +1094,23 @@ async function renderAreaDetail(app, templateId, aircraftId, position) {
           🔬 Analisar esta Área
         </button>` : `
         <div class="no-mask-banner" style="margin-top:12px">Bata as fotos ANTES e DEPOIS para analisar.</div>`}
+
+      ${history && history.length > 0 ? `
+        <div class="section-label" style="margin-top:24px; color:#ffb74d">📍 Histórico de Danos (Outras Fases)</div>
+        <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px">
+          ${history.map(h => `
+            <div class="card" style="background:rgba(255,183,77,0.05); border:1px solid rgba(255,183,77,0.2); padding:10px;" 
+                 onclick="window.open('${h.url}', '_blank')">
+              <img src="${h.url}" style="width:60px; height:60px; border-radius:8px; object-fit:cover; border:1px solid #ffb74d">
+              <div class="card-body">
+                <div class="card-title" style="color:#ffb74d; font-size:0.85rem">Fase: ${esc(h.phase)}</div>
+                <div class="card-sub" style="font-size:0.7rem">${fmtDate(h.captured_at)}</div>
+              </div>
+              <span style="color:#ffb74d; font-size:0.75rem; font-weight:700">⚠️ DANO</span>
+            </div>
+          `).join('')}
+        </div>` : ''}
+
       ${lastAnalysis ? `
         <div class="section-label" style="margin-top:20px">Última Análise</div>
         <div class="card" onclick="go('/analysis/${lastAnalysis.id}')">
