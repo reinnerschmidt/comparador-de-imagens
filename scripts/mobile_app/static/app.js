@@ -177,12 +177,12 @@ let aiChatHistory = [];
 function renderChatHistory() {
   if (aiChatHistory.length === 0) return '';
   return aiChatHistory.map(m => {
-    // Transformar caminhos /data/... em tags <img>
+    // Transformar caminhos "/data/..." (entre aspas) em tags <img>
     let formattedText = m.text;
     if (m.role === 'ai') {
-      const imgRegex = /(\/data\/[^\s)]+\.(?:jpg|jpeg|png|webp))/gi;
-      formattedText = formattedText.replace(imgRegex, (match) => {
-        return `<img src="${match}" class="chat-img" onclick="window.open('${match}', '_blank')">`;
+      const imgRegex = /"(\/data\/[^"]+\.(?:jpg|jpeg|png|webp))"/gi;
+      formattedText = formattedText.replace(imgRegex, (match, p1) => {
+        return `<img src="${p1}" class="chat-img" onclick="window.open('${p1}', '_blank')">`;
       });
     }
     

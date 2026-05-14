@@ -1310,9 +1310,9 @@ def ai_query():
         Dados encontrados: {results}
         
         IMPORTANTE: 
-        1. Se houver caminhos de arquivo (file_path, heatmap_path) nos dados, você DEVE incluí-los na resposta como URLs completas começando com '/'. 
-           Exemplo: Se o dado for 'data/inspections/img.jpg', escreva '/data/inspections/img.jpg'.
-        2. O frontend irá renderizar automaticamente qualquer string que comece com '/data/' como uma imagem.
+        1. Se houver caminhos de arquivo (file_path, heatmap_path) nos dados, você DEVE incluí-los na resposta como URLs completas começando com '/' e SEMPRE entre aspas duplas.
+           Exemplo: Se o dado for 'data/inspections/img.jpg', escreva "/data/inspections/img.jpg".
+        2. O frontend irá detectar o padrão "/data/..." e renderizar a imagem.
         3. Escreva uma resposta curta e profissional.
         4. No final, SEMPRE adicione a frase: "Você deseja que eu gere um gráfico sobre?"
         """
