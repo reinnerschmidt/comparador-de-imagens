@@ -1240,25 +1240,35 @@ def ai_query():
         # Tenta uma sequência de nomes para máxima compatibilidade (Sync com financas-bot-saas)
         model_names = ['gemini-flash-latest', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
         response = None
+        response = None
         model = None
         
         for m_name in model_names:
             try:
                 print(f"DEBUG: Tentando Gemini modelo {m_name}...")
                 model = genai.GenerativeModel(m_name)
+                print(f"DEBUG: Modelo {m_name} instanciado. Gerando conteúdo...")
                 response = model.generate_content(schema_prompt)
+                print(f"DEBUG: Resposta recebida de {m_name}")
                 if response: break
             except Exception as e:
-                print(f"⚠️ Erro com {m_name}: {e}")
+                print(f"⚠️ Erro ao tentar modelo {m_name}: {type(e).__name__}: {str(e)}")
                 continue
         
-        if not response or not response.candidates:
+        if not response:
+            print("❌ Erro: Todos os modelos Gemini falharam.")
+            return jsonify({"error": "Nenhum modelo Gemini disponível no momento. Verifique logs do servidor."}), 500
+            
+        print("DEBUG: Analisando candidatos da resposta...")
+        if not response.candidates:
+            print("❌ Erro: Resposta sem candidatos (provável filtro de segurança)")
             return jsonify({"answer": "A IA não conseguiu gerar uma query. Pode ser um filtro de segurança do Google."})
             
         try:
             sql_query = response.text.strip().replace('```sql', '').replace('```', '').strip()
-        except ValueError:
-            # Frequentemente ocorre quando a resposta é bloqueada por segurança
+            print(f"DEBUG: SQL Gerado: {sql_query}")
+        except ValueError as ve:
+            print(f"❌ Erro ao ler response.text: {ve}")
             return jsonify({"answer": "A resposta da IA foi bloqueada pelos filtros de segurança. Tente reformular a pergunta."})
 
         if sql_query.startswith("ERROR"):
