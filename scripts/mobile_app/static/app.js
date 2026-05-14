@@ -59,6 +59,7 @@ function route() {
   let r;
 
   if (h === '/')                              return renderHome(app);
+  if (h === '/dashboard')                     return renderDashboard(app);
   if (h === '/aircrafts')                     return renderAircraftList(app);
   if (h === '/aircraft/new')                  return renderNewAircraft(app);
   if (h === '/area/new')                      return renderNewArea(app);
@@ -144,7 +145,24 @@ async function renderHome(app) {
           <div style="font-weight:600">Kotsu - Registrar Dano</div>
         </div>
       </button>
+
+      <!-- Destaque de Danos & Dashboard -->
+      <div id="home-dashboard-highlight"></div>
     </div>`;
+
+  // Busca estatísticas para o destaque
+  const stats = await API.get('/api/stats/dashboard').catch(() => ({total: 0}));
+  const highlight = document.getElementById('home-dashboard-highlight');
+  if (highlight) {
+    highlight.innerHTML = `
+      <div class="dashboard-highlight" style="background:linear-gradient(135deg, rgba(26,86,219,0.1) 0%, rgba(0,0,0,0) 100%); border:1px solid var(--border); border-radius:12px; padding:20px; margin-top:32px; text-align:center">
+        <div style="font-size:0.85rem; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em">Indicadores de Frota</div>
+        <div style="font-size:1.1rem; font-weight:600; line-height:1.4">
+          Temos um total de <span style="color:var(--accent); font-size:1.6rem; display:block; margin:4px 0">${stats.total}</span> danos registrados em nossas aeronaves
+        </div>
+        <button class="btn btn-ghost" style="margin-top:20px; border-color:var(--accent); color:var(--accent); background:rgba(26,86,219,0.05)" onclick="go('/dashboard')">📊 Abrir Dashboard</button>
+      </div>`;
+  }
 }
 
 function setPhaseAndGo(phase) {
@@ -2213,10 +2231,10 @@ function drawKotsuMarker() {
   _kotsuRegions.forEach(r => {
     const rx = sx + r.x * sw, ry = sy + r.y * sh, rw = r.w * sw, rh = r.h * sh;
     _kotsuCtx.strokeRect(rx, ry, rw, rh);
-    const bs = 24, bx = rx + rw - bs/2, by = ry - bs/2;
+    const bs = 36, bx = rx + rw - bs/2, by = ry - bs/2;
     _kotsuCtx.fillStyle = '#ff3333'; _kotsuCtx.beginPath(); _kotsuCtx.arc(bx+bs/2, by+bs/2, bs/2, 0, Math.PI*2); _kotsuCtx.fill();
-    _kotsuCtx.strokeStyle = '#fff'; _kotsuCtx.lineWidth = 2;
-    _kotsuCtx.beginPath(); _kotsuCtx.moveTo(bx+6,by+6); _kotsuCtx.lineTo(bx+bs-6,by+bs-6); _kotsuCtx.moveTo(bx+bs-6,by+6); _kotsuCtx.lineTo(bx+6,by+bs-6); _kotsuCtx.stroke();
+    _kotsuCtx.strokeStyle = '#fff'; _kotsuCtx.lineWidth = 3;
+    _kotsuCtx.beginPath(); _kotsuCtx.moveTo(bx+10,by+10); _kotsuCtx.lineTo(bx+bs-10,by+bs-10); _kotsuCtx.moveTo(bx+bs-10,by+10); _kotsuCtx.lineTo(bx+10,by+bs-10); _kotsuCtx.stroke();
     r._btn = { bx, by, size: bs };
   });
   _kotsuCtx.shadowBlur = 0;
@@ -2316,4 +2334,156 @@ async function deleteKotsuPhoto(photoId, backUrl) {
     const res = await API.del(`/api/photos/${photoId}`);
     if (res?.ok) { toast('Registro Kotsu excluído', 'ok'); go(backUrl); }
   } catch(e) {}
+}
+
+/* ════════════════════════════════════════════
+   DASHBOARD — Indicadores e Gráficos
+════════════════════════════════════════════ */
+async function renderDashboard(app) {
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
+      <div class="header-logo-divider"></div>
+      <h1>Dashboard de Danos</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+    </div>
+    <div class="view" style="padding-bottom: 40px">
+      <div class="cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; padding-top: 10px">
+        
+        <!-- Gráfico por Fase -->
+        <div class="card" style="flex-direction:column; padding:24px; align-items:stretch; background:var(--surface)">
+          <div class="section-label" style="margin-bottom:20px">Danos por Tipo / Fase</div>
+          <div style="height:220px"><canvas id="chart-phase"></canvas></div>
+        </div>
+
+        <!-- Gráfico por Aeronave -->
+        <div class="card" style="flex-direction:column; padding:24px; align-items:stretch; background:var(--surface)">
+          <div class="section-label" style="margin-bottom:20px">Danos por Aeronave</div>
+          <div style="height:220px"><canvas id="chart-aircraft"></canvas></div>
+        </div>
+
+        <!-- Gráfico por Áreas -->
+        <div class="card" style="flex-direction:column; padding:24px; align-items:stretch; background:var(--surface)">
+          <div class="section-label" style="margin-bottom:20px">Danos por Áreas Globais</div>
+          <div style="height:220px"><canvas id="chart-areas"></canvas></div>
+          <p style="font-size:0.7rem; color:var(--muted); text-align:center; margin-top:10px">💡 Clique em uma barra para detalhar sub-áreas</p>
+        </div>
+
+        <!-- Gráfico por Sub-áreas -->
+        <div class="card" style="flex-direction:column; padding:24px; align-items:stretch; background:var(--surface)">
+          <div class="section-label" id="subarea-title" style="margin-bottom:20px">Sub-áreas</div>
+          <div style="height:220px"><canvas id="chart-subareas"></canvas></div>
+        </div>
+
+      </div>
+    </div>`;
+
+  const stats = await API.get('/api/stats/dashboard').catch(() => null);
+  if (!stats) return;
+
+  // Configurações globais do Chart.js para o tema escuro
+  if (window.Chart) {
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.borderColor = 'rgba(255,255,255,0.1)';
+
+    new Chart(document.getElementById('chart-phase'), {
+      type: 'doughnut',
+      data: {
+        labels: stats.by_phase.map(p => p.label),
+        datasets: [{
+          data: stats.by_phase.map(p => p.count),
+          backgroundColor: ['#1a56db', '#3fb950', '#d29922', '#ff3333'],
+          borderWidth: 0
+        }]
+      },
+      options: { 
+        responsive: true, 
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15 } } }
+      }
+    });
+
+    new Chart(document.getElementById('chart-aircraft'), {
+      type: 'bar',
+      data: {
+        labels: stats.by_aircraft.map(a => a.label),
+        datasets: [{
+          label: 'Danos',
+          data: stats.by_aircraft.map(a => a.count),
+          backgroundColor: '#1a56db',
+          borderRadius: 6
+        }]
+      },
+      options: { 
+        responsive: true, 
+        maintainAspectRatio: false, 
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } 
+      }
+    });
+
+    const ctxAreas = document.getElementById('chart-areas');
+    new Chart(ctxAreas, {
+      type: 'bar',
+      data: {
+        labels: stats.by_global_area.map(a => a.label),
+        datasets: [{
+          label: 'Danos',
+          data: stats.by_global_area.map(a => a.count),
+          backgroundColor: '#3fb950',
+          borderRadius: 6
+        }]
+      },
+      options: { 
+        responsive: true, 
+        maintainAspectRatio: false, 
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        onClick: (e, activeEls) => {
+          if (activeEls.length > 0) {
+            const idx = activeEls[0].index;
+            const area = stats.by_global_area[idx];
+            updateSubareaChart(area.id, area.label);
+          }
+        }
+      }
+    });
+
+    let subareaChart = null;
+    const updateSubareaChart = (areaId, areaName) => {
+      const titleEl = document.getElementById('subarea-title');
+      if (titleEl) titleEl.textContent = `Danos em: ${areaName}`;
+
+      const filtered = stats.subareas.filter(s => s.global_area_id === areaId);
+      const ctxSub = document.getElementById('chart-subareas');
+      
+      if (subareaChart) subareaChart.destroy();
+      
+      subareaChart = new Chart(ctxSub, {
+        type: 'bar',
+        data: {
+          labels: filtered.map(s => s.label),
+          datasets: [{
+            label: 'Danos',
+            data: filtered.map(s => s.count),
+            backgroundColor: '#d29922',
+            borderRadius: 6
+          }]
+        },
+        options: { 
+          responsive: true, 
+          maintainAspectRatio: false, 
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } 
+        }
+      });
+    };
+
+    // Inicializa com Cockpit ou a primeira área disponível
+    if (stats.by_global_area.length > 0) {
+      const cockpit = stats.by_global_area.find(a => a.label.toLowerCase().includes('cockpit')) || stats.by_global_area[0];
+      updateSubareaChart(cockpit.id, cockpit.label);
+    }
+  }
 }

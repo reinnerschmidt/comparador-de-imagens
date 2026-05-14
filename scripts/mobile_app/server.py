@@ -646,6 +646,25 @@ def activate_position_area(aircraft_id: int, position: str):
     except Exception:
         return jsonify({"error": "Já ativa ou erro"}), 400
 
+@app.route("/api/aircraft/<int:aircraft_id>/position-areas")
+def get_position_areas(aircraft_id: int):
+    """Retorna todas as sub-áreas ativadas para uma determinada posição."""
+    position = request.args.get("position")
+    if not position: return jsonify({"error": "position obrigatória"}), 400
+    
+    with db_conn() as conn:
+        sql = f"""
+            SELECT DISTINCT a.id, a.name 
+            FROM areas a
+            JOIN global_area_subareas gas ON a.id = gas.subarea_id
+            JOIN position_areas pa ON gas.global_area_id = pa.global_area_id
+            WHERE pa.aircraft_id = {PH} AND pa.position = {PH}
+            ORDER BY a.name
+        """
+        rows = fetchall(conn, sql, (aircraft_id, position.upper()))
+    return jsonify(rows)
+
+
 @app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/areas/<int:ga_id>", methods=["DELETE"])
 def deactivate_position_area(aircraft_id: int, position: str, ga_id: int):
     position = position.upper()
@@ -790,8 +809,54 @@ def list_kotsu(aircraft_id: int):
 
     return jsonify(result)
 
-
-@app.route("/api/photos/upload", methods=["POST"])
+@app.route("/api/stats/dashboard")
+def dashboard_stats():
+    with db_conn() as conn:
+        # Total damages (confirmed or manual or kotsu)
+        # has_damage_check = 2 means confirmed damage
+        total_damage = fetchone(conn, f"SELECT COUNT(*) as count FROM inspection_photos WHERE has_damage_check = 2")["count"]
+        
+        # Damage by phase (including Kotsu)
+        by_phase = fetchall(conn, f"SELECT phase as label, COUNT(*) as count FROM inspection_photos WHERE has_damage_check = 2 GROUP BY phase")
+        
+        # Damage by aircraft
+        by_aircraft = fetchall(conn, f"""
+            SELECT ac.serial as label, COUNT(p.id) as count 
+            FROM aircraft ac
+            JOIN inspection_photos p ON ac.id = p.aircraft_id AND p.has_damage_check = 2
+            GROUP BY ac.id, ac.serial
+            ORDER BY count DESC
+        """)
+        
+        # Damage by Area (Global Areas)
+        by_global_area = fetchall(conn, f"""
+            SELECT ga.id, ga.name as label, COUNT(p.id) as count 
+            FROM global_areas ga
+            JOIN global_area_subareas gas ON ga.id = gas.global_area_id
+            JOIN inspection_photos p ON gas.subarea_id = p.area_id AND p.has_damage_check = 2
+            GROUP BY ga.id, ga.name
+            ORDER BY count DESC
+        """)
+        
+        # Sub-area details
+        subareas = fetchall(conn, f"""
+            SELECT gas.global_area_id, a.name as label, COUNT(p.id) as count 
+            FROM global_areas ga
+            JOIN global_area_subareas gas ON ga.id = gas.global_area_id
+            JOIN areas a ON gas.subarea_id = a.id
+            LEFT JOIN inspection_photos p ON a.id = p.area_id AND p.has_damage_check = 2
+            GROUP BY gas.global_area_id, a.id, a.name
+            HAVING COUNT(p.id) > 0
+            ORDER BY count DESC
+        """)
+        
+    return jsonify({
+        "total": total_damage,
+        "by_phase": by_phase,
+        "by_aircraft": by_aircraft,
+        "by_global_area": by_global_area,
+        "subareas": subareas
+    })
 
 def upload_photo():
     """Recebe foto em base64, salva em disco e registra no banco."""
