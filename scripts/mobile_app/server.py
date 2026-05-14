@@ -981,61 +981,73 @@ def dashboard_stats():
 @app.route("/api/photos/upload", methods=["POST"])
 def upload_photo():
     """Recebe foto em base64, salva em disco e registra no banco."""
-    data        = request.get_json(force=True)
-    aircraft_id = data.get("aircraft_id")
-    area_id     = data.get("area_id")
-    mode        = (data.get("mode") or "").lower()
-    image_b64   = data.get("image")  # data:image/jpeg;base64,...
-    has_damage  = bool(data.get("has_manual_damage"))
-    damage_regs = json.dumps(data.get("damage_regions", []))
-
-    if not all([aircraft_id, area_id, mode, image_b64]):
-        return jsonify({"error": "aircraft_id, area_id, mode e image são obrigatórios"}), 400
-    if mode not in ("before", "after"):
-        return jsonify({"error": "mode deve ser 'before' ou 'after'"}), 400
-
-    # Decodifica imagem
     try:
-        if "," in image_b64:
-            image_b64 = image_b64.split(",", 1)[1]
-        img_bytes = base64.b64decode(image_b64)
-    except Exception:
-        return jsonify({"error": "Imagem base64 inválida"}), 400
+        data        = request.get_json(force=True)
+        aircraft_id = data.get("aircraft_id")
+        area_id     = data.get("area_id")
+        mode        = (data.get("mode") or "").lower()
+        image_b64   = data.get("image")
+        has_damage  = bool(data.get("has_manual_damage"))
+        damage_regs = json.dumps(data.get("damage_regions", []))
+        
+        if not all([aircraft_id, area_id, mode, image_b64]):
+            return jsonify({"error": "Dados incompletos (aircraft, area, mode ou image)"}), 400
 
-    # Busca serial da aeronave e nome da área
-    with db_conn() as conn:
-        aircraft = fetchone(conn, f"SELECT serial FROM aircraft WHERE id={PH}", (aircraft_id,))
-        area     = fetchone(conn, f"SELECT name FROM areas WHERE id={PH}", (area_id,))
+        # Decodifica imagem
+        try:
+            if "," in image_b64:
+                image_b64 = image_b64.split(",", 1)[1]
+            img_bytes = base64.b64decode(image_b64)
+        except Exception as e:
+            return jsonify({"error": f"Erro ao decodificar imagem: {str(e)}"}), 400
 
-    if not aircraft or not area:
-        return jsonify({"error": "Aeronave ou área não encontrada"}), 404
+        # Busca serial da aeronave e nome da área
+        with db_conn() as conn:
+            aircraft = fetchone(conn, f"SELECT serial FROM aircraft WHERE id={PH}", (aircraft_id,))
+            area     = fetchone(conn, f"SELECT name FROM areas WHERE id={PH}", (area_id,))
 
-    # Salva arquivo
-    position = (data.get("position") or "").strip().upper() or None
-    ts       = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    filename = f"{ts}_{mode}.jpg"
-    sub      = f"{position}/" if position else ""
-    folder   = PHOTOS_DIR / aircraft["serial"] / sub / area["name"]
-    folder.mkdir(parents=True, exist_ok=True)
-    file_path = folder / filename
-    file_path.write_bytes(img_bytes)
+        if not aircraft or not area:
+            return jsonify({"error": f"Aeronave({aircraft_id}) ou Área({area_id}) não encontrada"}), 404
 
-    rel_path = str(file_path.relative_to(BASE_DIR))
+        # Salva arquivo
+        position = (data.get("position") or "").strip().upper() or None
+        ts       = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"{ts}_{mode}.jpg"
+        sub      = f"{position}/" if position else ""
+        folder   = PHOTOS_DIR / aircraft["serial"] / sub / area["name"]
+        
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            file_path = folder / filename
+            file_path.write_bytes(img_bytes)
+        except Exception as e:
+            return jsonify({"error": f"Erro ao gravar arquivo no disco: {str(e)}"}), 500
 
-    phase = (data.get("phase") or "Recebimento").strip()
-    
-    # Determina o status inicial: se marcou dano manual, já entra como 'Com Dano' (2)
-    has_damage_check = 2 if has_damage else 0
-    
-    with db_conn() as conn:
-        photo_id = execute_returning(
-            conn,
-            f"INSERT INTO inspection_photos (aircraft_id, area_id, position, phase, mode, file_path, has_manual_damage, has_damage_check, manual_damage_regions) "
-            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
-            (aircraft_id, area_id, position, phase, mode, rel_path, has_damage, has_damage_check, damage_regs),
-        )
+        rel_path = str(file_path.relative_to(BASE_DIR))
+        phase = (data.get("phase") or "Recebimento").strip()
+        
+        # Prioriza o check enviado pelo frontend, senão infere do dano manual
+        # has_damage_check: 0=Pendente, 1=Sem Dano, 2=Com Dano
+        hdc_req = data.get("has_damage_check")
+        if hdc_req is not None:
+            has_damage_check = int(hdc_req)
+        else:
+            has_damage_check = 2 if has_damage else 0
+        
+        with db_conn() as conn:
+            photo_id = execute_returning(
+                conn,
+                f"INSERT INTO inspection_photos (aircraft_id, area_id, position, phase, mode, file_path, has_manual_damage, has_damage_check, manual_damage_regions) "
+                f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
+                (aircraft_id, area_id, position, phase, mode, rel_path, has_damage, has_damage_check, damage_regs),
+            )
 
-    return jsonify({"id": photo_id, "file_path": rel_path, "mode": mode}), 201
+        return jsonify({"id": photo_id, "file_path": rel_path, "mode": mode}), 201
+
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": f"Erro interno no servidor: {str(e)}"}), 500
 
 @app.route("/api/aircraft/<int:aircraft_id>/areas/<int:area_id>/photos")
 def list_photos(aircraft_id: int, area_id: int):
