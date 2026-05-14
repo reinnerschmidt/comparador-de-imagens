@@ -142,7 +142,6 @@ async function renderHome(app) {
         <img src="/static/kotsu-icon.png" style="width:40px; height:40px; object-fit:contain; border-radius:4px">
         <div style="text-align:left">
           <div style="font-weight:600">Kotsu - Registrar Dano</div>
-          <div style="font-size:0.7rem;opacity:0.7;color:#ff9999">Dano manual sem foto de referência</div>
         </div>
       </button>
     </div>`;
