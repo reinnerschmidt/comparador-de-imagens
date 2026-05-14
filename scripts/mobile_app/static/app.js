@@ -2132,10 +2132,21 @@ async function renderKotsuAreaList(app, aircraftId, position) {
         ${(areas || []).map(a => {
           const list = kotsuByArea[a.id] || [];
           const badge = list.length ? `<span style="background:#ff3333;color:#fff;font-size:0.7rem;padding:2px 8px;border-radius:20px;font-weight:700">🔴 ${list.length} Kotsu</span>` : '';
+          const isK = !!a.is_kotsu_only;
+          const controls = isK ? `
+            <div style="display:flex; gap:10px; margin-right:5px">
+              <button class="btn-icon" style="padding:4px; color:var(--muted); font-size:1.1rem" 
+                      onclick="editKotsuArea(${a.id}, '${esc(a.name)}', '${aircraftId}', '${position}')">✏️</button>
+              <button class="btn-icon" style="padding:4px; color:#ff3333; font-size:1.1rem" 
+                      onclick="deleteKotsuArea(${a.id}, '${aircraftId}', '${position}')">🗑️</button>
+            </div>` : '';
+
           return `
           <div class="card" style="padding:14px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08)">
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:${list.length ? '10px' : '0'}">
-              <span style="flex:1;font-weight:600">${a.name}</span>${badge}
+              <span style="flex:1;font-weight:600">${a.name}</span>
+              ${controls}
+              ${badge}
               <button class="btn btn-primary" style="font-size:0.75rem;padding:6px 14px;min-height:34px;background:#ff3333;border-color:#ff3333"
                       onclick="go('/kotsu/${aircraftId}/pos/${position}/area/${a.id}/capture')">+ Registrar</button>
             </div>
@@ -2152,6 +2163,28 @@ async function renderKotsuAreaList(app, aircraftId, position) {
                 onclick="promptCreateKotsuArea('${aircraftId}', '${position}')">+ Nova Sub-área (Kotsu)</button>
       </div>
     </div>`;
+}
+
+async function editKotsuArea(areaId, currentName, aircraftId, position) {
+  const newName = prompt('Novo nome da área:', currentName);
+  if (!newName || newName === currentName) return;
+  try {
+    await API.put(`/api/areas/${areaId}`, { name: newName });
+    renderKotsuAreaList(document.getElementById('app'), aircraftId, position);
+  } catch(e) {}
+}
+
+async function deleteKotsuArea(areaId, aircraftId, position) {
+  if (!confirm('Deseja excluir esta sub-área customizada?')) return;
+  try {
+    const res = await API.del(`/api/areas/${areaId}`);
+    if (res.ok) {
+      toast('Área removida', 'ok');
+      renderKotsuAreaList(document.getElementById('app'), aircraftId, position);
+    }
+  } catch(e) {
+    toast(e.error || 'Erro ao excluir', 'err');
+  }
 }
 
 async function promptCreateKotsuArea(aircraftId, position) {

@@ -656,7 +656,7 @@ def get_position_areas(aircraft_id: int):
     
     with db_conn() as conn:
         sql = f"""
-            SELECT DISTINCT a.id, a.name 
+            SELECT DISTINCT a.id, a.name, a.is_kotsu_only 
             FROM areas a
             JOIN global_area_subareas gas ON a.id = gas.subarea_id
             JOIN position_areas pa ON gas.global_area_id = pa.global_area_id
@@ -665,6 +665,27 @@ def get_position_areas(aircraft_id: int):
         """
         rows = fetchall(conn, sql, (aircraft_id, position.upper()))
     return jsonify(rows)
+
+
+@app.route("/api/areas/<int:area_id>", methods=["PUT"])
+def update_area(area_id: int):
+    name = request.json.get("name")
+    if not name: return jsonify({"error": "name obrigatório"}), 400
+    with db_conn() as conn:
+        conn.cursor().execute(f"UPDATE areas SET name={PH} WHERE id={PH}", (name, area_id))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/areas/<int:area_id>", methods=["DELETE"])
+def delete_area(area_id: int):
+    with db_conn() as conn:
+        area = fetchone(conn, f"SELECT is_kotsu_only FROM areas WHERE id={PH}", (area_id,))
+        # No Postgres is_kotsu_only é boolean, no SQLite é 1/0
+        is_k = bool(area.get("is_kotsu_only")) if area else False
+        if not is_k:
+            return jsonify({"error": "Apenas áreas do Kotsu podem ser excluídas"}), 403
+        conn.cursor().execute(f"DELETE FROM areas WHERE id={PH}", (area_id,))
+    return jsonify({"ok": True})
 
 
 @app.route("/api/kotsu/custom-area", methods=["POST"])
