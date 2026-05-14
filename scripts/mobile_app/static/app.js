@@ -772,8 +772,12 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
       <div style="background:rgba(255,255,255,0.05); padding:16px; border-radius:12px; margin-bottom:20px; border:1px solid rgba(255,255,255,0.1)">
         <div style="font-size:0.85rem; color:var(--muted); margin-bottom:12px">Alterar status da inspeção:</div>
         <div style="display:flex; gap:12px; justify-content:center;">
-          <button class="btn btn-ghost" style="flex:1; border-color:#00c853; color:#00c853; font-size:0.85rem" onclick="updatePhotoCheck(1)">✅ Sem Dano</button>
-          <button class="btn btn-ghost" style="flex:1; border-color:#ff3333; color:#ff3333; font-size:0.85rem" onclick="updatePhotoCheck(2)">⚠️ Com Dano</button>
+          <button class="btn ${photo.has_damage_check === 1 ? 'btn-primary' : 'btn-ghost'}" 
+                  style="flex:1; border-color:#00c853; color:${photo.has_damage_check === 1 ? '#fff' : '#00c853'}; background:${photo.has_damage_check === 1 ? '#00c853' : 'transparent'}; font-size:0.85rem" 
+                  onclick="updatePhotoCheck(1)">✅ Sem Dano</button>
+          <button class="btn ${photo.has_damage_check === 2 ? 'btn-primary' : 'btn-ghost'}" 
+                  style="flex:1; border-color:#ff3333; color:${photo.has_damage_check === 2 ? '#fff' : '#ff3333'}; background:${photo.has_damage_check === 2 ? '#ff3333' : 'transparent'}; font-size:0.85rem" 
+                  onclick="updatePhotoCheck(2)">⚠️ Com Dano</button>
         </div>
       </div>
 
@@ -787,11 +791,19 @@ async function updatePhotoCheck(status) {
   const photoId = window._currentPhotoId;
   if (!photoId) return;
   try {
+    const btn = event.currentTarget;
+    const oldText = btn.innerHTML;
+    btn.innerHTML = '⏳';
+    btn.disabled = true;
+
     await API.post(`/api/photos/${photoId}/check`, { status });
     toast('Status atualizado!', 'ok');
-    route(); // Recarrega a view atual
+    
+    // Pequeno delay para garantir que o backend processou
+    setTimeout(() => route(), 300);
   } catch(e) {
     toast('Erro ao atualizar status', 'err');
+    route();
   }
 }
 
