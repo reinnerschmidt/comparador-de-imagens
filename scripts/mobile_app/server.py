@@ -503,7 +503,11 @@ def create_area():
 @app.route("/api/areas/<int:area_id>", methods=["DELETE"])
 def delete_area(area_id: int):
     with db_conn() as conn:
-        conn.cursor().execute(f"DELETE FROM areas WHERE id = {PH}", (area_id,))
+        area = fetchone(conn, f"SELECT is_kotsu_only FROM areas WHERE id={PH}", (area_id,))
+        is_k = bool(area.get("is_kotsu_only")) if area else False
+        if not is_k:
+            return jsonify({"error": "Apenas áreas do Kotsu podem ser excluídas"}), 403
+        conn.cursor().execute(f"DELETE FROM areas WHERE id={PH}", (area_id,))
     return jsonify({"ok": True})
 
 
@@ -676,16 +680,7 @@ def update_area(area_id: int):
     return jsonify({"ok": True})
 
 
-@app.route("/api/areas/<int:area_id>", methods=["DELETE"])
-def delete_area(area_id: int):
-    with db_conn() as conn:
-        area = fetchone(conn, f"SELECT is_kotsu_only FROM areas WHERE id={PH}", (area_id,))
-        # No Postgres is_kotsu_only é boolean, no SQLite é 1/0
-        is_k = bool(area.get("is_kotsu_only")) if area else False
-        if not is_k:
-            return jsonify({"error": "Apenas áreas do Kotsu podem ser excluídas"}), 403
-        conn.cursor().execute(f"DELETE FROM areas WHERE id={PH}", (area_id,))
-    return jsonify({"ok": True})
+
 
 
 @app.route("/api/kotsu/custom-area", methods=["POST"])
