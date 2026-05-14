@@ -130,7 +130,7 @@ async function renderHome(app) {
       <div class="section-label">Gestão de Modelos e Áreas</div>
       <div class="cards-grid" style="grid-template-columns: 1fr 1fr;">
         <div class="card" onclick="go('/aircrafts')" style="flex-direction:column; padding:20px; text-align:center; gap:8px">
-          <img src="/static/embraer-e2.png" style="width:50px; height:auto; object-fit:contain; margin: 4px auto">
+          <img src="/static/embraer-e2.png" style="width:60px; height:36px; object-fit:contain; margin: 4px auto">
           <div class="card-title">Aeronaves</div>
         </div>
         <div class="card" onclick="go('/global-area/new')" style="flex-direction:column; padding:20px; text-align:center; gap:8px">
@@ -423,8 +423,13 @@ async function removeSubareaFromGlobal(gaId, areaId) {
 
 async function deleteGlobalArea(id) {
   if (!confirm('Remover esta área global?')) return;
-  await API.delete(`/api/global_areas/${id}`);
-  go('/aircrafts');
+  const res = await API.delete(`/api/global_areas/${id}`);
+  if (res?.error) {
+    toast('Erro ao excluir: ' + res.error, 'err');
+    return;
+  }
+  toast('Área global removida', 'ok');
+  go('/');
 }
 
 /* ════════════════════════════════════════════
