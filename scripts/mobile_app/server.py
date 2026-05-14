@@ -459,6 +459,15 @@ def delete_aircraft(aid: int):
     return jsonify({"ok": True})
 
 
+@app.route("/api/aircraft/<int:aid>/status", methods=["POST"])
+def update_aircraft_status(aid: int):
+    data = request.json
+    status = data.get("status")
+    with db_conn() as conn:
+        conn.cursor().execute(f"UPDATE aircraft SET status = {PH} WHERE id = {PH}", (status, aid))
+    return jsonify({"ok": True})
+
+
 # ─── Areas (Globais) ──────────────────────────────────────────────────────────
 
 @app.route("/api/areas")

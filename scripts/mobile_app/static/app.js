@@ -502,7 +502,8 @@ async function renderAircraftDetail(app, id) {
       <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
       <div class="header-logo-divider"></div>
       <h1 id="ac-title">…</h1>
-      <button class="btn-icon" style="color:var(--danger)" onclick="deleteAircraft(${id})" title="Remover">🗑</button>
+      <div id="ac-status-badge" style="margin-left:12px; cursor:pointer"></div>
+      <button class="btn-icon" style="color:var(--danger); margin-left:auto" onclick="deleteAircraft(${id})" title="Remover">🗑</button>
     </div>
     <div class="view">
       <div class="section-label">Posições de Inspeção</div>
@@ -519,6 +520,11 @@ async function renderAircraftDetail(app, id) {
   ]);
   
   document.getElementById('ac-title').textContent = aircraft.serial || '—';
+
+  const statusEl = document.getElementById('ac-status-badge');
+  const isActive = aircraft.status !== 'Inativo';
+  statusEl.innerHTML = `<span style="font-size:0.65rem; padding:4px 8px; border-radius:12px; background:${isActive ? 'var(--primary)' : 'var(--err)'}; color:#fff; font-weight:700">${aircraft.status || 'Ativo'}</span>`;
+  statusEl.onclick = () => toggleAircraftStatus(id, aircraft.status || 'Ativo');
 
   document.getElementById('pos-grid').innerHTML = POSITIONS.map(pos => {
     const s = stats[pos] || { inspected_areas: 0, total_damages: 0, has_alert: false };
@@ -537,6 +543,13 @@ async function renderAircraftDetail(app, id) {
       <span style="color:var(--muted);font-size:1.2rem">›</span>
     </div>`;
   }).join('');
+}
+
+async function toggleAircraftStatus(id, current) {
+  const next = current === 'Ativo' ? 'Inativo' : 'Ativo';
+  await API.post(`/api/aircraft/${id}/status`, { status: next });
+  toast(`Status alterado para ${next}`, 'ok');
+  renderAircraftDetail(document.getElementById('app'), id);
 }
 
 async function analyzeAircraft(id) {
