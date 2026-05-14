@@ -897,15 +897,17 @@ async function deletePhoto(photoId, backUrl) {
   if (!confirm("Tem certeza que deseja excluir esta foto permanentemente?")) return;
   
   try {
-    const res = await API.delete(`/api/photos/${photoId}`);
-    if (res.ok) {
-      showToast("Foto excluída com sucesso");
+    // Usando API.del pois é o nome do método definido no topo do arquivo
+    const res = await API.del(`/api/photos/${photoId}`);
+    if (res && res.ok) {
+      toast("Foto excluída com sucesso");
       go(backUrl);
     } else {
-      showToast("Erro ao excluir foto");
+      toast("Erro ao excluir foto", "err");
     }
   } catch (err) {
-    showToast("Erro na conexão");
+    // O próprio API.del já dispara um toast em caso de erro de rede
+    console.error("Erro na deleção:", err);
   }
 }
 
