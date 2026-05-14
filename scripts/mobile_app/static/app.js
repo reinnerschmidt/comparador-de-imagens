@@ -2147,7 +2147,25 @@ async function renderKotsuAreaList(app, aircraftId, position) {
               </div>`).join('')}
           </div>`;}).join('')}
       </div>
+      <div style="margin-top:24px; padding:0 4px">
+        <button class="btn btn-ghost" style="width:100%; border-style:dashed; color:var(--muted); border-color:var(--border); min-height:50px"
+                onclick="promptCreateKotsuArea('${aircraftId}', '${position}')">+ Nova Sub-área (Kotsu)</button>
+      </div>
     </div>`;
+}
+
+async function promptCreateKotsuArea(aircraftId, position) {
+  const name = prompt('Nome da nova sub-área:');
+  if (!name) return;
+  try {
+    const res = await API.post('/api/kotsu/custom-area', { aircraft_id: Number(aircraftId), position, name });
+    if (res.ok) {
+      toast('Sub-área criada!', 'ok');
+      renderKotsuAreaList(document.getElementById('app'), aircraftId, position);
+    }
+  } catch(e) {
+    toast('Erro ao criar área', 'err');
+  }
 }
 
 let _kotsuStream = null, _kotsuDataUrl = null;

@@ -268,15 +268,15 @@ def init_db() -> None:
         except:
             pass # Já existe
             
-        # Migração: Adicionar status à aeronave
+        # Migração: Adicionar is_kotsu_only à areas
         try:
             if not DB_URL:
-                cur.execute("ALTER TABLE aircraft ADD COLUMN status TEXT DEFAULT 'Ativo'")
+                cur.execute("ALTER TABLE areas ADD COLUMN is_kotsu_only INTEGER DEFAULT 0")
             else:
-                cur.execute("ALTER TABLE aircraft ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Ativo'")
+                cur.execute("ALTER TABLE areas ADD COLUMN IF NOT EXISTS is_kotsu_only BOOLEAN DEFAULT FALSE")
         except:
             pass
-        
+            
         conn.commit()
         # Migração legada: remove tabela areas com aircraft_id
         try:
@@ -571,7 +571,9 @@ def list_global_area_subareas(ga_id: int):
             conn,
             f"SELECT a.id, a.name, a.mask_thumb FROM areas a "
             f"JOIN global_area_subareas gas ON gas.subarea_id = a.id "
-            f"WHERE gas.global_area_id={PH} ORDER BY a.name",
+            f"WHERE gas.global_area_id={PH} "
+            f"AND (a.is_kotsu_only IS NULL OR a.is_kotsu_only = 0) "
+            f"ORDER BY a.name",
             (ga_id,)
         )
     return jsonify(subs)
@@ -663,6 +665,51 @@ def get_position_areas(aircraft_id: int):
         """
         rows = fetchall(conn, sql, (aircraft_id, position.upper()))
     return jsonify(rows)
+
+
+@app.route("/api/kotsu/custom-area", methods=["POST"])
+def create_kotsu_custom_area():
+    data = request.json
+    aircraft_id = data.get("aircraft_id")
+    position    = data.get("position", "").upper()
+    name        = data.get("name")
+    
+    if not all([aircraft_id, position, name]):
+        return jsonify({"error": "Parâmetros insuficientes"}), 400
+        
+    with db_conn() as conn:
+        # 1. Criar a área
+        sql_area = f"INSERT INTO areas (name, is_kotsu_only) VALUES ({PH}, 1) RETURNING id"
+        area_id = execute_returning(conn, sql_area, (name,))
+        
+        # 2. Encontrar ou criar uma área global para custom Kotsu
+        # Para simplificar, vamos vincular ao primeiro grupo ativo daquela posição
+        sql_ga = f"""
+            SELECT global_area_id FROM position_areas 
+            WHERE aircraft_id = {PH} AND position = {PH} 
+            LIMIT 1
+        """
+        ga = fetchone(conn, sql_ga, (aircraft_id, position))
+        
+        if not ga:
+            # Se não tiver área global ativa, cria uma genérica "Outras Áreas"
+            sql_gen = f"INSERT INTO global_areas (name) VALUES ('Outras Áreas (Kotsu)') RETURNING id"
+            ga_id = execute_returning(conn, sql_gen)
+            # Ativa para esta posição
+            conn.cursor().execute(
+                f"INSERT INTO position_areas (aircraft_id, position, global_area_id) VALUES ({PH}, {PH}, {PH})",
+                (aircraft_id, position, ga_id)
+            )
+        else:
+            ga_id = ga["global_area_id"]
+            
+        # 3. Vincular a área ao grupo global
+        conn.cursor().execute(
+            f"INSERT INTO global_area_subareas (global_area_id, subarea_id) VALUES ({PH}, {PH})",
+            (ga_id, area_id)
+        )
+        
+    return jsonify({"ok": True, "area_id": area_id}), 201
 
 
 @app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/areas/<int:ga_id>", methods=["DELETE"])
