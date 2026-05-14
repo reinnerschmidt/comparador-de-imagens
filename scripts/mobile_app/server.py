@@ -859,9 +859,18 @@ def list_kotsu(aircraft_id: int):
 @app.route("/api/stats/dashboard")
 def dashboard_stats():
     aircraft_id = request.args.get("aircraft_id")
-    where_p = f" AND p.aircraft_id = {PH}" if aircraft_id else ""
-    where_ac = f" WHERE p.aircraft_id = {PH}" if aircraft_id else ""
-    params = (aircraft_id,) if aircraft_id else ()
+    phase       = request.args.get("phase")
+    
+    where_p = ""
+    params = []
+    if aircraft_id:
+        where_p += f" AND p.aircraft_id = {PH}"
+        params.append(aircraft_id)
+    if phase:
+        where_p += f" AND p.phase = {PH}"
+        params.append(phase)
+        
+    params = tuple(params)
 
     with db_conn() as conn:
         # Total damages (unique events: aircraft + area + phase)

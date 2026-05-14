@@ -2357,21 +2357,23 @@ async function deleteKotsuPhoto(photoId, backUrl) {
 /* ════════════════════════════════════════════
    DASHBOARD — Indicadores e Gráficos
 ════════════════════════════════════════════ */
-async function renderDashboard(app, aircraftIdFilter = null) {
+async function renderDashboard(app, aircraftIdFilter = null, phaseFilter = null) {
   app.innerHTML = `
     <div class="app-header">
       <button class="btn-icon" onclick="go('/')" title="Voltar">‹</button>
       <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
       <div class="header-logo-divider"></div>
-      <h1>Dashboard de Danos ${aircraftIdFilter ? ' — Detalhe' : ''}</h1>
+      <h1>Dashboard de Danos ${aircraftIdFilter || phaseFilter ? ' — Detalhe' : ''}</h1>
       <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
     </div>
     <div class="view" style="padding-bottom: 40px">
-      ${aircraftIdFilter ? `
-        <div style="margin-bottom:16px; display:flex; align-items:center; gap:12px; background:rgba(26,86,219,0.1); padding:10px 16px; border-radius:8px; border:1px solid rgba(26,86,219,0.3)">
-          <span style="color:var(--accent-light); font-weight:600; font-size:0.9rem">📍 Filtrando por Aeronave</span>
-          <button class="btn btn-ghost btn-small" onclick="renderDashboard(document.getElementById('app'), null)" 
-                  style="padding:4px 12px; border-color:var(--accent); color:var(--accent); font-size:0.8rem; background:rgba(26,86,219,0.05)">✖ Limpar Filtro</button>
+      ${(aircraftIdFilter || phaseFilter) ? `
+        <div style="margin-bottom:16px; display:flex; flex-wrap:wrap; align-items:center; gap:12px; background:rgba(26,86,219,0.1); padding:10px 16px; border-radius:8px; border:1px solid rgba(26,86,219,0.3)">
+          <span style="color:var(--accent-light); font-weight:600; font-size:0.9rem">📍 Filtros:</span>
+          ${aircraftIdFilter ? `<span style="background:var(--accent); color:#fff; font-size:0.75rem; padding:2px 8px; border-radius:4px">Avião ID ${aircraftIdFilter}</span>` : ''}
+          ${phaseFilter ? `<span style="background:#3fb950; color:#fff; font-size:0.75rem; padding:2px 8px; border-radius:4px">${phaseFilter}</span>` : ''}
+          <button class="btn btn-ghost btn-small" onclick="renderDashboard(document.getElementById('app'), null, null)" 
+                  style="padding:4px 12px; border-color:var(--accent); color:var(--accent); font-size:0.8rem; background:rgba(26,86,219,0.05); margin-left:auto">✖ Limpar Filtros</button>
         </div>` : ''}
       
       <div class="cards-grid" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; padding-top: 10px">
@@ -2380,6 +2382,7 @@ async function renderDashboard(app, aircraftIdFilter = null) {
         <div class="card" style="flex-direction:column; padding:24px; align-items:stretch; background:var(--surface)">
           <div class="section-label" style="margin-bottom:20px">Danos por Tipo / Fase</div>
           <div style="height:220px"><canvas id="chart-phase"></canvas></div>
+          ${!phaseFilter ? '<p style="font-size:0.7rem; color:var(--muted); text-align:center; margin-top:10px">💡 Clique em uma fase para filtrar o dashboard</p>' : ''}
         </div>
 
         <!-- Gráfico por Aeronave -->
@@ -2405,7 +2408,10 @@ async function renderDashboard(app, aircraftIdFilter = null) {
       </div>
     </div>`;
 
-  const url = aircraftIdFilter ? `/api/stats/dashboard?aircraft_id=${aircraftIdFilter}` : '/api/stats/dashboard';
+  let url = `/api/stats/dashboard?t=${Date.now()}`;
+  if (aircraftIdFilter) url += `&aircraft_id=${aircraftIdFilter}`;
+  if (phaseFilter) url += `&phase=${encodeURIComponent(phaseFilter)}`;
+
   const stats = await API.get(url).catch(() => null);
   if (!stats) return;
 
@@ -2424,7 +2430,6 @@ async function renderDashboard(app, aircraftIdFilter = null) {
       formatter: (val) => val > 0 ? val : ''
     };
 
-    // Plugin local para registrar DataLabels em cada gráfico se disponível
     const plugins = window.ChartDataLabels ? [ChartDataLabels] : [];
 
     new Chart(document.getElementById('chart-phase'), {
@@ -2434,8 +2439,9 @@ async function renderDashboard(app, aircraftIdFilter = null) {
         labels: stats.by_phase.map(p => p.label),
         datasets: [{
           data: stats.by_phase.map(p => p.count),
-          backgroundColor: ['#1a56db', '#3fb950', '#d29922', '#ff3333'],
-          borderWidth: 0
+          backgroundColor: stats.by_phase.map(p => p.label === phaseFilter ? '#1a56db' : 'rgba(26,86,219,0.5)'),
+          borderWidth: 2,
+          borderColor: 'var(--surface)'
         }]
       },
       options: { 
@@ -2446,10 +2452,14 @@ async function renderDashboard(app, aircraftIdFilter = null) {
           datalabels: {
             color: '#fff',
             font: { weight: 'bold' },
-            formatter: (val, ctx) => {
-              const label = ctx.chart.data.labels[ctx.dataIndex];
-              return val > 0 ? `${val}` : '';
-            }
+            formatter: (val) => val > 0 ? val : ''
+          }
+        },
+        onClick: (e, activeEls) => {
+          if (activeEls.length > 0) {
+            const idx = activeEls[0].index;
+            const phase = stats.by_phase[idx].label;
+            renderDashboard(document.getElementById('app'), aircraftIdFilter, phase);
           }
         }
       }
@@ -2476,7 +2486,7 @@ async function renderDashboard(app, aircraftIdFilter = null) {
           if (activeEls.length > 0) {
             const idx = activeEls[0].index;
             const ac = stats.by_aircraft[idx];
-            renderDashboard(document.getElementById('app'), ac.id);
+            renderDashboard(document.getElementById('app'), ac.id, phaseFilter);
           }
         }
       }
@@ -2540,7 +2550,6 @@ async function renderDashboard(app, aircraftIdFilter = null) {
       });
     };
 
-    // Inicializa com Cockpit ou a primeira área disponível
     if (stats.by_global_area.length > 0) {
       const cockpit = stats.by_global_area.find(a => a.label.toLowerCase().includes('cockpit')) || stats.by_global_area[0];
       updateSubareaChart(cockpit.id, cockpit.label);
