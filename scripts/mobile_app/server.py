@@ -713,20 +713,31 @@ def register_kotsu():
     if not regions or len(regions) == 0:
         return jsonify({"error": "É obrigatório marcar ao menos uma região de dano"}), 400
 
+    # Busca serial e nome da área para organizar pastas
+    with db_conn() as conn:
+        aircraft = fetchone(conn, f"SELECT serial FROM aircraft WHERE id={PH}", (aircraft_id,))
+        area     = fetchone(conn, f"SELECT name FROM areas WHERE id={PH}", (area_id,))
+    
+    if not aircraft or not area:
+        return jsonify({"error": "Aeronave ou área não encontrada"}), 404
+
     # Salva imagem
-    import base64, binascii
     try:
-        header, _, b64data = img_b64.partition(",")
-        img_bytes = base64.b64decode(b64data if b64data else img_b64)
-    except (binascii.Error, ValueError):
+        if "," in img_b64:
+            img_b64 = img_b64.split(",", 1)[1]
+        img_bytes = base64.b64decode(img_b64)
+    except Exception:
         return jsonify({"error": "Imagem base64 inválida"}), 400
 
-    folder = BASE_DIR / "uploads" / "kotsu" / str(aircraft_id)
+    ts       = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"{ts}_kotsu.jpg"
+    sub      = f"{position}/" if position else ""
+    folder   = PHOTOS_DIR / aircraft["serial"] / sub / area["name"]
     folder.mkdir(parents=True, exist_ok=True)
-    import time
-    filename = f"kotsu_{area_id}_{int(time.time())}.jpg"
-    (folder / filename).write_bytes(img_bytes)
-    rel_path = str((folder / filename).relative_to(BASE_DIR))
+    file_path = folder / filename
+    file_path.write_bytes(img_bytes)
+
+    rel_path = str(file_path.relative_to(BASE_DIR))
 
     with db_conn() as conn:
         photo_id = execute_returning(

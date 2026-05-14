@@ -126,12 +126,9 @@ async function renderHome(app) {
         </div>
       </button>
 
-      <button class="btn btn-ghost" style="margin-top:12px; width:100%; border:1px solid rgba(255,60,60,0.3); color:var(--text); height:64px; display:flex; align-items:center; justify-content:center; gap:12px; background:rgba(255,40,40,0.06)" onclick="go('/kotsu/${ac.id}')">
+      <button class="btn btn-ghost" style="margin-top:12px; width:100%; border:1px solid rgba(255,255,255,0.1); color:var(--text); height:64px; display:flex; align-items:center; justify-content:center; gap:12px; background:rgba(255,255,255,0.03)" onclick="toast('Selecione uma aeronave para registrar Kotsu', 'info')">
         <img src="/static/kotsu-icon.png" style="width:40px; height:40px; object-fit:contain; border-radius:4px">
-        <div style="text-align:left">
-          <div style="font-weight:600">Kotsu - Registrar Dano</div>
-          <div style="font-size:0.7rem;opacity:0.7;color:#ff9999">Dano manual sem foto de referência</div>
-        </div>
+        <span style="font-weight:600">Kotsu - Registrar Dano</span>
       </button>
 
       <div class="divider" style="margin:40px 0"></div>
@@ -518,6 +515,13 @@ async function renderAircraftDetail(app, id) {
         <button class="btn btn-primary" onclick="analyzeAircraft(${id})" id="btn-analyze-aircraft">🔬 Analisar Avião</button>
         <button class="btn btn-ghost" onclick="downloadReport(${id})">📄 Relatório PDF</button>
       </div>
+      <button class="btn btn-ghost" style="margin-top:12px; width:100%; border:1px solid rgba(255,60,60,0.3); color:var(--text); height:64px; display:flex; align-items:center; justify-content:center; gap:12px; background:rgba(255,40,40,0.06)" onclick="go('/kotsu/${id}')">
+        <img src="/static/kotsu-icon.png" style="width:40px; height:40px; object-fit:contain; border-radius:4px">
+        <div style="text-align:left">
+          <div style="font-weight:600">Kotsu - Registrar Dano</div>
+          <div style="font-size:0.7rem;opacity:0.7;color:#ff9999">Dano manual sem foto de referência</div>
+        </div>
+      </button>
     </div>`;
 
   const [aircraft, stats] = await Promise.all([
