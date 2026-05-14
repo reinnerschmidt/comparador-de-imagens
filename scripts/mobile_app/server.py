@@ -731,12 +731,15 @@ def upload_photo():
 
     phase = (data.get("phase") or "Recebimento").strip()
     
+    # Determina o status inicial: se marcou dano manual, já entra como 'Com Dano' (2)
+    has_damage_check = 2 if has_damage else 0
+    
     with db_conn() as conn:
         photo_id = execute_returning(
             conn,
-            f"INSERT INTO inspection_photos (aircraft_id, area_id, position, phase, mode, file_path, has_manual_damage, manual_damage_regions) "
-            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
-            (aircraft_id, area_id, position, phase, mode, rel_path, has_damage, damage_regs),
+            f"INSERT INTO inspection_photos (aircraft_id, area_id, position, phase, mode, file_path, has_manual_damage, has_damage_check, manual_damage_regions) "
+            f"VALUES ({PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH},{PH})",
+            (aircraft_id, area_id, position, phase, mode, rel_path, has_damage, has_damage_check, damage_regs),
         )
 
     return jsonify({"id": photo_id, "file_path": rel_path, "mode": mode}), 201
@@ -765,7 +768,15 @@ def list_photos(aircraft_id: int, area_id: int):
     result = {"before": None, "after": None, "all": []}
     for r in rows:
         url = "/" + r["file_path"].replace("\\", "/")
-        entry = {**r, "url": url}
+        # Converte manual_damage_regions de string para JSON
+        regs = []
+        try:
+            if r.get("manual_damage_regions"):
+                regs = json.loads(r["manual_damage_regions"])
+        except:
+            pass
+            
+        entry = {**r, "url": url, "manual_damage_regions": regs}
         result["all"].append(entry)
         if r["mode"] == "before" and not result["before"]:
             result["before"] = entry

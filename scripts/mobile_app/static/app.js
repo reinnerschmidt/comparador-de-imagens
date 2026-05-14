@@ -841,10 +841,8 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
       <h1>${label}</h1>
       <a href="${photo.url}" download="${label}_${aircraftId}.jpg" class="btn-icon" style="font-size:1.4rem">📥</a>
     </div>
-    <div style="background:#000;width:100%;min-height:45vh;display:flex;align-items:center;justify-content:center;overflow:auto">
-      <a href="${photo.url}" target="_blank" title="Clique para ver resolução original">
-        <img src="${photo.url}" style="max-width:100%; max-height:60vh; display:block; margin:auto">
-      </a>
+    <div style="background:#000;width:100%;min-height:45vh;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden">
+      <canvas id="photo-viewer-canvas" style="max-width:100%; max-height:60vh; display:block; cursor:pointer" onclick="window.open('${photo.url}', '_blank')"></canvas>
     </div>
     <div class="view" style="text-align:center; padding-top:8px">
       <div style="margin-bottom:8px; font-size:1.1rem">${dmgStatus}</div>
@@ -871,6 +869,28 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
       
       <p style="font-size:0.65rem; color:var(--muted); margin-top:8px">Dica: Toque na imagem para ver em resolução original.</p>
     </div>`;
+
+  // Desenha no canvas
+  const canvas = document.getElementById('photo-viewer-canvas');
+  const ctx = canvas.getContext('2d');
+  const img = new Image();
+  img.onload = () => {
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    ctx.drawImage(img, 0, 0);
+    
+    // Desenha as regiões de dano manual
+    if (photo.manual_damage_regions && photo.manual_damage_regions.length > 0) {
+      ctx.strokeStyle = '#ff3333';
+      ctx.lineWidth = Math.max(4, img.naturalWidth / 200);
+      ctx.shadowColor = 'rgba(255,0,0,0.5)';
+      ctx.shadowBlur = 10;
+      photo.manual_damage_regions.forEach(r => {
+        ctx.strokeRect(r.x * canvas.width, r.y * canvas.height, r.w * canvas.width, r.h * canvas.height);
+      });
+    }
+  };
+  img.src = photo.url;
 }
 
 async function deletePhoto(photoId, backUrl) {
