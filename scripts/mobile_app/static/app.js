@@ -2400,9 +2400,9 @@ async function renderDashboard(app, aircraftIdFilter = null) {
     const datalabelsConfig = {
       anchor: 'end',
       align: 'top',
-      offset: 4,
-      font: { weight: 'bold', size: 11 },
-      color: '#fff',
+      offset: 0,
+      font: { weight: 'bold', size: 12 },
+      color: '#ffffff',
       formatter: (val) => val > 0 ? val : ''
     };
 
@@ -2453,7 +2453,7 @@ async function renderDashboard(app, aircraftIdFilter = null) {
         responsive: true, 
         maintainAspectRatio: false, 
         plugins: { legend: { display: false }, datalabels: datalabelsConfig },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, display: false }, grid: { display: false } } },
+        scales: { y: { beginAtZero: true, grace: '15%', ticks: { display: false }, grid: { display: false } } },
         onClick: (e, activeEls) => {
           if (activeEls.length > 0) {
             const idx = activeEls[0].index;
@@ -2480,7 +2480,7 @@ async function renderDashboard(app, aircraftIdFilter = null) {
         responsive: true, 
         maintainAspectRatio: false, 
         plugins: { legend: { display: false }, datalabels: datalabelsConfig },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, display: false }, grid: { display: false } } },
+        scales: { y: { beginAtZero: true, grace: '15%', ticks: { display: false }, grid: { display: false } } },
         onClick: (e, activeEls) => {
           if (activeEls.length > 0) {
             const idx = activeEls[0].index;
@@ -2517,7 +2517,7 @@ async function renderDashboard(app, aircraftIdFilter = null) {
           responsive: true, 
           maintainAspectRatio: false, 
           plugins: { legend: { display: false }, datalabels: datalabelsConfig },
-          scales: { y: { beginAtZero: true, ticks: { stepSize: 1, display: false }, grid: { display: false } } } 
+          scales: { y: { beginAtZero: true, grace: '15%', ticks: { display: false }, grid: { display: false } } } 
         }
       });
     };
