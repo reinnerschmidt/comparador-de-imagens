@@ -1017,7 +1017,10 @@ async function renderAreaDetail(app, templateId, aircraftId, position) {
     app.innerHTML = `
       <div class="app-header">
         <button class="btn-icon" onclick="go('/')">‹</button>
-        <h1>Modelo: ${esc(data.name)}</h1>
+        <h1 style="display:flex; align-items:center; gap:8px">
+          Modelo: ${esc(data.name)}
+          <button class="btn-icon" style="font-size:1rem; padding:4px" onclick="editAreaName(${templateId}, '${esc(data.name)}')">✏️</button>
+        </h1>
         <button class="btn-icon" style="color:var(--danger)" onclick="deleteArea(${templateId})">🗑</button>
       </div>
       <div class="view">
@@ -2202,6 +2205,17 @@ async function editKotsuArea(areaId, currentName, aircraftId, position) {
     await API.put(`/api/areas/${areaId}`, { name: newName });
     renderKotsuAreaList(document.getElementById('app'), aircraftId, position);
   } catch(e) {}
+}
+
+async function editAreaName(areaId, currentName) {
+  const newName = prompt('Novo nome do modelo:', currentName);
+  if (!newName || newName === currentName) return;
+  try {
+    await API.get(`/api/areas/${areaId}/mask`); // Verify it exists
+    await API.put(`/api/areas/${areaId}`, { name: newName });
+    renderAreaDetail(document.getElementById('app'), areaId);
+    toast('Nome atualizado', 'ok');
+  } catch(e) { toast('Erro ao renomear', 'err'); }
 }
 
 async function deleteKotsuArea(areaId, aircraftId, position) {
