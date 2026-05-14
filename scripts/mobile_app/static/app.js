@@ -2131,12 +2131,19 @@ async function renderKotsuPosition(app, aircraftId) {
     <div class="view">
       <p style="color:var(--muted);font-size:0.8rem;margin-bottom:16px">Selecione a posição onde o dano Kotsu ocorreu.</p>
       <div style="display:flex;flex-direction:column;gap:10px">
-        ${positions.map(pos => `
+        ${positions.map(pos => {
+          const s = ac[pos] || {};
+          const hasDamage = s.total_damages > 0;
+          return `
           <button class="card" style="display:flex;align-items:center;gap:12px;padding:16px;text-align:left;cursor:pointer;background:rgba(255,60,60,0.07);border:1px solid rgba(255,60,60,0.2)" onclick="go('/kotsu/${aircraftId}/pos/${pos}')">
             <span style="font-size:1.4rem;font-weight:800;color:#ff5555">${pos}</span>
-            <span style="color:var(--text)">Posição ${pos}</span>
+            <div style="flex:1">
+              <div style="color:var(--text)">Posição ${pos}</div>
+              ${hasDamage ? `<div style="font-size:0.75rem; color:#f2a154; font-weight:700; margin-top:4px">📍 Contém Danos (${s.total_damages})</div>` : ''}
+            </div>
             <span style="margin-left:auto;color:var(--muted)">›</span>
-          </button>`).join('')}
+          </button>`;
+        }).join('')}
       </div>
     </div>`;
 }
