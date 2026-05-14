@@ -381,16 +381,15 @@ def list_aircraft():
                 f"SELECT COUNT(DISTINCT area_id) as count FROM inspection_photos WHERE aircraft_id = {PH}", (aid,))
             ac["inspected_areas"] = inspected["count"] if inspected else 0
             
-            # Total de danos (IA + Manual)
-            # 1. Danos detectados pela IA
-            ai_damages = fetchone(conn,
-                f"SELECT COUNT(*) as count FROM analyses WHERE aircraft_id = {PH} AND status = 'Dano Detectado'", (aid,))
+            # Total de danos únicos (IA ou Manual)
+            damages = fetchone(conn,
+                f"SELECT COUNT(DISTINCT area_id) as count FROM ("
+                f"  SELECT area_id FROM analyses WHERE aircraft_id = {PH} AND status = 'Dano Detectado' "
+                f"  UNION "
+                f"  SELECT area_id FROM inspection_photos WHERE aircraft_id = {PH} AND has_damage_check = 2"
+                f") as t", (aid, aid))
             
-            # 2. Danos marcados manualmente (has_damage_check = 2)
-            manual_damages = fetchone(conn,
-                f"SELECT COUNT(*) as count FROM inspection_photos WHERE aircraft_id = {PH} AND has_damage_check = 2", (aid,))
-            
-            ac["total_damages"] = (ai_damages["count"] or 0) + (manual_damages["count"] or 0)
+            ac["total_damages"] = damages["count"] if damages else 0
             ac["has_alert"] = ac["total_damages"] > 0
             
     return jsonify(aircraft)
@@ -410,17 +409,15 @@ def aircraft_stats(aid: int):
                 f"SELECT COUNT(DISTINCT area_id) as count FROM inspection_photos WHERE aircraft_id = {PH} AND position = {PH}", 
                 (aid, pos))
             
-            # Danos na posição (IA)
-            ai_damages = fetchone(conn,
-                f"SELECT COUNT(*) as count FROM analyses WHERE aircraft_id = {PH} AND position = {PH} AND status = 'Dano Detectado'",
-                (aid, pos))
+            # Total de danos únicos na posição (IA ou Manual)
+            damages = fetchone(conn,
+                f"SELECT COUNT(DISTINCT area_id) as count FROM ("
+                f"  SELECT area_id FROM analyses WHERE aircraft_id = {PH} AND position = {PH} AND status = 'Dano Detectado' "
+                f"  UNION "
+                f"  SELECT area_id FROM inspection_photos WHERE aircraft_id = {PH} AND position = {PH} AND has_damage_check = 2"
+                f") as t", (aid, pos, aid, pos))
             
-            # Danos na posição (Manual)
-            manual_damages = fetchone(conn,
-                f"SELECT COUNT(*) as count FROM inspection_photos WHERE aircraft_id = {PH} AND position = {PH} AND has_damage_check = 2",
-                (aid, pos))
-            
-            total_damages = (ai_damages["count"] or 0) + (manual_damages["count"] or 0)
+            total_damages = damages["count"] if damages else 0
             
             stats[pos] = {
                 "inspected_areas": inspected["count"] or 0,
