@@ -129,7 +129,7 @@ async function renderHome(app) {
       <div class="section-label">Gestão de Modelos e Áreas</div>
       <div class="cards-grid" style="grid-template-columns: 1fr 1fr;">
         <div class="card" onclick="go('/aircrafts')" style="flex-direction:column; padding:20px; text-align:center; gap:8px">
-          <span style="font-size:1.8rem">📦</span>
+          <img src="/static/embraer-e2.png" style="width:50px; height:auto; object-fit:contain; margin: 4px auto">
           <div class="card-title">Aeronaves</div>
         </div>
         <div class="card" onclick="go('/global-area/new')" style="flex-direction:column; padding:20px; text-align:center; gap:8px">
