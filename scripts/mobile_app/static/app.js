@@ -831,9 +831,18 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
   window._currentPhotoId = photo.id;
 
   const ts = fmtDate(photo.captured_at);
-  const dmgStatus = photo.has_damage_check === 2 ? '<span style="color:#ff3333;font-weight:bold">⚠️ Dano Identificado</span>' : 
-                   photo.has_damage_check === 1 ? '<span style="color:#00c853;font-weight:bold">✅ Sem Dano</span>' : 
-                   '<span style="color:var(--muted)">Pendente</span>';
+  // Converte para número: a API pode retornar string ou int dependendo do adapter
+  const check = Number(photo.has_damage_check ?? 0);
+  const dmgStatus = check === 2 ? '<span style="color:#ff3333;font-weight:bold">⚠️ Dano Identificado</span>' :
+                    check === 1 ? '<span style="color:#00c853;font-weight:bold">✅ Sem Dano</span>' :
+                    '<span style="color:var(--muted)">Pendente</span>';
+  // Botões pré-construídos fora do template literal para evitar comparação de tipos
+  const btnSem = `<button class="btn ${check === 1 ? 'btn-primary' : 'btn-ghost'}"
+      style="flex:1; border-color:#00c853; color:${check === 1 ? '#fff' : '#00c853'}; background:${check === 1 ? '#00c853' : 'transparent'}; font-size:0.8rem; min-height:40px; padding:8px"
+      onclick="updatePhotoCheck(1, event)">✅ Sem Dano</button>`;
+  const btnCom = `<button class="btn ${check === 2 ? 'btn-primary' : 'btn-ghost'}"
+      style="flex:1; border-color:#ff3333; color:${check === 2 ? '#fff' : '#ff3333'}; background:${check === 2 ? '#ff3333' : 'transparent'}; font-size:0.8rem; min-height:40px; padding:8px"
+      onclick="updatePhotoCheck(2, event)">⚠️ Com Dano</button>`;
 
   app.innerHTML = `
     <div class="app-header">
@@ -850,12 +859,8 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
       <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:12px; margin-bottom:16px; border:1px solid rgba(255,255,255,0.1)">
         <div style="font-size:0.8rem; color:var(--muted); margin-bottom:8px">Alterar status da inspeção:</div>
         <div style="display:flex; gap:10px; justify-content:center;">
-          <button class="btn ${photo.has_damage_check === 1 ? 'btn-primary' : 'btn-ghost'}" 
-                  style="flex:1; border-color:#00c853; color:${photo.has_damage_check === 1 ? '#fff' : '#00c853'}; background:${photo.has_damage_check === 1 ? '#00c853' : 'transparent'}; font-size:0.8rem; min-height:40px; padding:8px" 
-                  onclick="updatePhotoCheck(1, event)">✅ Sem Dano</button>
-          <button class="btn ${photo.has_damage_check === 2 ? 'btn-primary' : 'btn-ghost'}" 
-                  style="flex:1; border-color:#ff3333; color:${photo.has_damage_check === 2 ? '#fff' : '#ff3333'}; background:${photo.has_damage_check === 2 ? '#ff3333' : 'transparent'}; font-size:0.8rem; min-height:40px; padding:8px" 
-                  onclick="updatePhotoCheck(2, event)">⚠️ Com Dano</button>
+          ${btnSem}
+          ${btnCom}
         </div>
       </div>
 
