@@ -1201,7 +1201,7 @@ def list_feedback(analysis_id: int):
 # ─── AI Insights (Gemini) ───────────────────────────────────────────────────
 
 # Configuração do Gemini
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip().strip('"').strip("'")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
@@ -1252,33 +1252,53 @@ def ai_query():
                 print(f"⚠️ Erro com {m_name}: {e}")
                 continue
         
-        if not response:
-            return jsonify({"error": "Nenhum modelo Gemini disponível no momento."}), 500
+        if not response or not response.candidates:
+            return jsonify({"answer": "A IA não conseguiu gerar uma query. Pode ser um filtro de segurança do Google."})
             
-        sql_query = response.text.strip().replace('```sql', '').replace('```', '').strip()
+        try:
+            sql_query = response.text.strip().replace('```sql', '').replace('```', '').strip()
+        except ValueError:
+            # Frequentemente ocorre quando a resposta é bloqueada por segurança
+            return jsonify({"answer": "A resposta da IA foi bloqueada pelos filtros de segurança. Tente reformular a pergunta."})
 
         if sql_query.startswith("ERROR"):
             return jsonify({"answer": "Desculpe, não encontrei dados suficientes para responder a essa pergunta."})
 
         # Segurança: Validar se é apenas SELECT
         if not sql_query.lower().startswith("select"):
-            return jsonify({"error": "A IA gerou uma query inválida ou perigosa."}), 500
+            return jsonify({"error": f"A IA gerou uma query inválida: {sql_query}"}), 500
 
         # 2. Executar a query
-        with db_conn() as conn:
-            results = fetchall(conn, sql_query)
+        results = []
+        try:
+            with db_conn() as conn:
+                results = fetchall(conn, sql_query)
+        except Exception as db_e:
+            print(f"Erro ao executar SQL da IA: {db_e} | Query: {sql_query}")
+            return jsonify({"error": f"Erro no banco de dados ao processar a pergunta da IA: {db_e}"}), 500
 
         # 3. Formatar a resposta final em texto
         format_prompt = f"""
-        Com base na pergunta do usuário: "{question}"
-        E nos resultados brutos do banco de dados: {results}
+        Você é um assistente de inspeção. Responda à pergunta do usuário baseando-se nos dados do banco.
+        Pergunta: "{question}"
+        Dados encontrados: {results}
         
-        Escreva uma resposta curta, direta e profissional em português para o inspetor de aeronaves.
-        No final, SEMPRE adicione exatamente a frase: "Você deseja que eu gere um gráfico sobre?"
+        Escreva uma resposta curta e profissional.
+        No final, SEMPRE adicione a frase: "Você deseja que eu gere um gráfico sobre?"
         """
         
-        final_response = model.generate_content(format_prompt)
-        answer_text = final_response.text.strip()
+        try:
+            final_response = model.generate_content(format_prompt)
+            if not final_response or not final_response.candidates:
+                 return jsonify({"answer": "A IA processou os dados mas não conseguiu formatar a resposta por filtros de segurança."})
+            answer_text = final_response.text.strip()
+        except (ValueError, Exception) as fe:
+            print(f"Erro ao formatar resposta final: {fe}")
+            # Fallback se a formatação falhar
+            return jsonify({
+                "answer": f"Aqui estão os dados encontrados: {results}. Você deseja que eu gere um gráfico sobre?",
+                "sql": sql_query if app.debug else None
+            })
 
         return jsonify({
             "answer": answer_text,
