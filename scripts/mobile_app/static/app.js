@@ -862,9 +862,31 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
       </div>
 
       <p style="color:var(--muted); font-size:0.8rem; margin-bottom:12px">${ts}</p>
-      <button class="btn btn-primary" onclick="go('${retakeUrl}')"> 📷 Tirar novamente</button>
+      
+      <div style="display:flex; gap:10px; justify-content:center; align-items:center">
+        <button class="btn btn-primary" style="flex:1; min-height:44px" onclick="go('${retakeUrl}')"> 📷 Tirar novamente</button>
+        <button class="btn btn-ghost" style="width:50px; height:44px; display:flex; align-items:center; justify-content:center; border-color:#ff3333; color:#ff3333; padding:0" 
+                onclick="deletePhoto(${photo.id}, '${backUrl}')">🗑️</button>
+      </div>
+      
       <p style="font-size:0.65rem; color:var(--muted); margin-top:8px">Dica: Toque na imagem para ver em resolução original.</p>
     </div>`;
+}
+
+async function deletePhoto(photoId, backUrl) {
+  if (!confirm("Tem certeza que deseja excluir esta foto permanentemente?")) return;
+  
+  try {
+    const res = await API.delete(`/api/photos/${photoId}`);
+    if (res.ok) {
+      showToast("Foto excluída com sucesso");
+      go(backUrl);
+    } else {
+      showToast("Erro ao excluir foto");
+    }
+  } catch (err) {
+    showToast("Erro na conexão");
+  }
 }
 
 async function updatePhotoCheck(status, event) {

@@ -649,6 +649,27 @@ def deactivate_position_area(aircraft_id: int, position: str, ga_id: int):
 
 # ─── Photos ───────────────────────────────────────────────────────────────────
 
+@app.route("/api/photos/<int:photo_id>", methods=["DELETE"])
+def delete_photo(photo_id: int):
+    with db_conn() as conn:
+        photo = fetchone(conn, f"SELECT file_path FROM inspection_photos WHERE id={PH}", (photo_id,))
+        if not photo:
+            return jsonify({"error": "Foto não encontrada"}), 404
+        
+        # Deleta do banco
+        conn.cursor().execute(f"DELETE FROM inspection_photos WHERE id={PH}", (photo_id,))
+        
+        # Tenta deletar o arquivo físico
+        try:
+            full_path = BASE_DIR / photo["file_path"]
+            if full_path.exists():
+                full_path.unlink()
+        except Exception as e:
+            print(f"Erro ao deletar arquivo: {e}")
+            
+    return jsonify({"ok": True})
+
+
 @app.route("/api/photos/<int:photo_id>/check", methods=["POST"])
 def update_photo_check(photo_id: int):
     data = request.get_json(force=True)
