@@ -35,6 +35,7 @@ for d in [DATA_DIR, PHOTOS_DIR, REPORTS_DIR, COMP_DIR]:
 sys.path.insert(0, str(BASE_DIR / "src"))
 
 DB_URL = os.environ.get("DATABASE_URL", "")
+IS_POSTGRES = bool(DB_URL)
 
 if DB_URL:
     import psycopg2
