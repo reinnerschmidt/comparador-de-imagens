@@ -156,7 +156,7 @@ async function renderHome(app) {
   if (highlight) {
     highlight.innerHTML = `
       <div class="dashboard-highlight" style="background:linear-gradient(135deg, rgba(26,86,219,0.1) 0%, rgba(0,0,0,0) 100%); border:1px solid var(--border); border-radius:12px; padding:20px; margin-top:32px; text-align:center">
-        <div style="font-size:0.85rem; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em">Indicadores de Frota</div>
+        <div style="font-size:0.85rem; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em">Indicador F220</div>
         <div style="font-size:1.1rem; font-weight:600; line-height:1.4">
           Temos um total de <span style="color:var(--accent); font-size:1.6rem; display:block; margin:4px 0">${stats.total}</span> danos registrados em nossas aeronaves
         </div>
