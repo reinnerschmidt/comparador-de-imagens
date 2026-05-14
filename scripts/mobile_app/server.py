@@ -80,7 +80,10 @@ def db_conn():
 
 def fetchall(conn, sql: str, params=()) -> list[dict]:
     cur = conn.cursor()
-    cur.execute(sql, params)
+    if params:
+        cur.execute(sql, params)
+    else:
+        cur.execute(sql)
     rows = cur.fetchall()
     if DB_URL:
         cols = [d[0] for d in cur.description]
@@ -109,6 +112,7 @@ SCHEMA_SQLITE = """
         id      INTEGER PRIMARY KEY AUTOINCREMENT,
         serial  TEXT NOT NULL UNIQUE,
         name    TEXT,
+        status  TEXT DEFAULT 'Ativo',
         created TEXT DEFAULT (datetime('now'))
     );
     CREATE TABLE IF NOT EXISTS areas (
@@ -181,6 +185,7 @@ SCHEMA_PG = """
         id      SERIAL PRIMARY KEY,
         serial  TEXT NOT NULL UNIQUE,
         name    TEXT,
+        status  TEXT DEFAULT 'Ativo',
         created TIMESTAMPTZ DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS areas (
@@ -262,6 +267,15 @@ def init_db() -> None:
                 cur.execute("ALTER TABLE inspection_photos ADD COLUMN IF NOT EXISTS has_damage_check INTEGER DEFAULT 0")
         except:
             pass # Já existe
+            
+        # Migração: Adicionar status à aeronave
+        try:
+            if not DB_URL:
+                cur.execute("ALTER TABLE aircraft ADD COLUMN status TEXT DEFAULT 'Ativo'")
+            else:
+                cur.execute("ALTER TABLE aircraft ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Ativo'")
+        except:
+            pass
         
         conn.commit()
         # Migração legada: remove tabela areas com aircraft_id
@@ -356,7 +370,7 @@ def serve(path: str):
 @app.route("/api/aircraft")
 def list_aircraft():
     with db_conn() as conn:
-        aircraft = fetchall(conn, "SELECT id, serial, name, created FROM aircraft ORDER BY created DESC")
+        aircraft = fetchall(conn, "SELECT id, serial, name, status, created FROM aircraft ORDER BY created DESC")
         
         # Adicionar estatísticas para cada aeronave
         for ac in aircraft:
@@ -421,16 +435,17 @@ def aircraft_stats(aid: int):
 def create_aircraft():
     data   = request.get_json(force=True)
     serial = (data.get("serial") or "").strip().upper()
+    status = data.get("status", "Ativo")
     if not serial:
         return jsonify({"error": "Número de série é obrigatório"}), 400
     try:
         with db_conn() as conn:
             new_id = execute_returning(
                 conn,
-                f"INSERT INTO aircraft (serial, name) VALUES ({PH}, {PH})",
-                (serial, serial),  # name = serial por padrão
+                f"INSERT INTO aircraft (serial, name, status) VALUES ({PH}, {PH}, {PH})",
+                (serial, serial, status),  # name = serial por padrão
             )
-        return jsonify({"id": new_id, "serial": serial, "name": serial}), 201
+        return jsonify({"id": new_id, "serial": serial, "name": serial, "status": status}), 201
     except Exception as e:
         if "unique" in str(e).lower():
             return jsonify({"error": "Número de série já cadastrado"}), 409
@@ -1294,8 +1309,12 @@ def ai_query():
         Pergunta: "{question}"
         Dados encontrados: {results}
         
-        Escreva uma resposta curta e profissional.
-        No final, SEMPRE adicione a frase: "Você deseja que eu gere um gráfico sobre?"
+        IMPORTANTE: 
+        1. Se houver caminhos de arquivo (file_path, heatmap_path) nos dados, você DEVE incluí-los na resposta como URLs completas começando com '/'. 
+           Exemplo: Se o dado for 'data/inspections/img.jpg', escreva '/data/inspections/img.jpg'.
+        2. O frontend irá renderizar automaticamente qualquer string que comece com '/data/' como uma imagem.
+        3. Escreva uma resposta curta e profissional.
+        4. No final, SEMPRE adicione a frase: "Você deseja que eu gere um gráfico sobre?"
         """
         
         try:

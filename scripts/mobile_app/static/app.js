@@ -176,11 +176,22 @@ let aiChatHistory = [];
 
 function renderChatHistory() {
   if (aiChatHistory.length === 0) return '';
-  return aiChatHistory.map(m => `
-    <div class="chat-msg ${m.role}">
-      <div class="chat-bubble">${m.text}</div>
-    </div>
-  `).join('');
+  return aiChatHistory.map(m => {
+    // Transformar caminhos /data/... em tags <img>
+    let formattedText = m.text;
+    if (m.role === 'ai') {
+      const imgRegex = /(\/data\/[^\s)]+\.(?:jpg|jpeg|png|webp))/gi;
+      formattedText = formattedText.replace(imgRegex, (match) => {
+        return `<img src="${match}" class="chat-img" onclick="window.open('${match}', '_blank')">`;
+      });
+    }
+    
+    return `
+      <div class="chat-msg ${m.role}">
+        <div class="chat-bubble">${formattedText}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 async function askAI() {
@@ -272,7 +283,10 @@ async function renderAircraftList(app) {
           ${a.has_alert ? `<span style="position:absolute; bottom:-5px; right:-5px; font-size:1rem">⚠️</span>` : ''}
         </span>
         <div class="card-body">
-          <div class="card-title">${esc(a.serial)}</div>
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <div class="card-title">${esc(a.serial)}</div>
+            <div style="font-size:0.65rem; padding:2px 6px; border-radius:4px; background:${a.status === 'Inativo' ? 'var(--muted)' : 'var(--primary)'}; color:#fff">${esc(a.status)}</div>
+          </div>
           <div class="card-sub" style="font-size:0.75rem; color:var(--muted)">
             Áreas: ${a.inspected_areas || 0} | Danos: ${a.total_damages || 0}
           </div>
@@ -424,14 +438,22 @@ function renderNewAircraft(app) {
         <label class="form-label">Número de série</label>
         <input id="f-serial" class="form-input" placeholder="ex: 20227" autocapitalize="characters" inputmode="numeric">
       </div>
+      <div class="form-group">
+        <label class="form-label">Status do avião</label>
+        <select id="f-status" class="form-input">
+          <option value="Ativo">Ativo</option>
+          <option value="Inativo">Inativo</option>
+        </select>
+      </div>
       <button class="btn btn-primary" onclick="submitAircraft()">Cadastrar</button>
     </div>`;
 }
 
 async function submitAircraft() {
   const serial = document.getElementById('f-serial').value.trim();
+  const status = document.getElementById('f-status').value;
   if (!serial) { toast('Informe o número de série', 'err'); return; }
-  const res = await API.post('/api/aircraft', { serial });
+  const res = await API.post('/api/aircraft', { serial, status });
   if (res?.error) { toast(res.error, 'err'); return; }
   go(`/aircraft/${res.id}`);
 }

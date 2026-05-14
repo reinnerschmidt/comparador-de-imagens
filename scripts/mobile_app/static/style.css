@@ -647,3 +647,14 @@ html, body {
   border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
 }
+.chat-img {
+  display: block;
+  max-width: 100%;
+  border-radius: 8px;
+  margin-top: 8px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.chat-img:hover {
+  transform: scale(1.02);
+}
