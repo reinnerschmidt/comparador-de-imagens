@@ -381,12 +381,12 @@ html, body {
 .step-line   { flex: 1; height: 2px; background: var(--border); }
 .step-line.done { background: var(--ok); }
 
-/* Crop overlay */
-#crop-overlay {
+/* Crop & Damage overlays */
+#crop-overlay, #damage-overlay {
   position: fixed; inset: 0; z-index: 300; background: #000;
   display: flex; flex-direction: column;
 }
-#crop-canvas {
+#crop-canvas, #damage-canvas {
   position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none;
 }
 

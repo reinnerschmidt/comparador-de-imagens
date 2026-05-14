@@ -595,11 +595,11 @@ def list_position_areas(aircraft_id: int, position: str):
     phase = request.args.get("phase")
     with db_conn() as conn:
         if phase:
-            # Retorna apenas as sub-áreas que já possuem fotos (usado para o status '✅ Com fotos')
+            # Retorna as sub-áreas que possuem fotos e se possuem dano marcado
             rows = fetchall(
                 conn,
-                f"SELECT DISTINCT p.area_id FROM inspection_photos p "
-                f"WHERE p.aircraft_id={PH} AND p.position={PH} AND p.phase={PH}",
+                f"SELECT area_id, MAX(has_damage_check) as has_damage FROM inspection_photos "
+                f"WHERE aircraft_id={PH} AND position={PH} AND phase={PH} GROUP BY area_id",
                 (aircraft_id, position, phase),
             )
             return jsonify(rows)

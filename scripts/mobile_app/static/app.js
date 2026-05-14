@@ -626,7 +626,10 @@ async function renderPositionDetail(app, aircraftId, position) {
     g.subareas.forEach(sa => groupedAreaIds.add(sa.id));
   });
 
-  const photoStatsMap = new Set(posPhotoStats.map(a => a.area_id));
+  const photoStatsMap = {};
+  posPhotoStats.forEach(a => {
+    photoStatsMap[a.area_id] = { hasPhotos: true, hasDamage: a.has_damage === 2 };
+  });
 
   // Render Activated Areas (Folders)
   const groupsGrid = document.getElementById('pos-groups');
@@ -649,7 +652,10 @@ async function renderPositionDetail(app, aircraftId, position) {
               ${sa.mask_thumb ? `<img src="${sa.mask_thumb}" style="width:32px;height:32px;border-radius:4px;object-fit:cover;margin-right:12px;">` : `<span style="margin-right:12px;">📐</span>`}
               <div class="card-body">
                 <div class="card-title" style="font-size:0.9rem">${esc(sa.name)}</div>
-                <div class="card-sub" style="font-size:0.75rem">${photoStatsMap.has(sa.id) ? '✅ Com fotos' : '📸 Sem fotos'}</div>
+                <div class="card-sub" style="font-size:0.75rem">
+                  ${photoStatsMap[sa.id]?.hasDamage ? '<span style="color:var(--danger);font-weight:700">⚠️ Com Dano</span>' : 
+                    photoStatsMap[sa.id]?.hasPhotos ? '✅ Com fotos' : '📸 Sem fotos'}
+                </div>
               </div>
               <span style="color:var(--muted)">›</span>
             </div>
@@ -669,7 +675,10 @@ async function renderPositionDetail(app, aircraftId, position) {
         ${a.mask_thumb ? `<img class="card-thumb" src="${a.mask_thumb}">` : `<span class="card-icon">📐</span>`}
         <div class="card-body">
           <div class="card-title">${esc(a.name)}</div>
-          <div class="card-sub">${photoStatsMap.has(a.id) ? '✅ Com fotos' : '📸 Sem fotos'}</div>
+          <div class="card-sub">
+            ${photoStatsMap[a.id]?.hasDamage ? '<span style="color:var(--danger);font-weight:700">⚠️ Com Dano</span>' : 
+              photoStatsMap[a.id]?.hasPhotos ? '✅ Com fotos' : '📸 Sem fotos'}
+          </div>
         </div>
         <span style="color:var(--muted);font-size:1.2rem">›</span>
       </div>`).join('');
@@ -742,7 +751,10 @@ async function renderGroupDetail(app, aircraftId, position, groupId) {
       <div id="group-areas" class="cards-grid"></div>
     </div>`;
 
-  const withPhotos = new Set(posAreas.map(a => a.area_id));
+  const withPhotos = {};
+  posAreas.forEach(a => {
+    withPhotos[a.area_id] = { hasPhotos: true, hasDamage: a.has_damage === 2 };
+  });
   const grid = document.getElementById('group-areas');
 
   if (!group.subareas.length) {
@@ -754,7 +766,10 @@ async function renderGroupDetail(app, aircraftId, position, groupId) {
           ${a.mask_thumb ? `<img class="card-thumb" src="${a.mask_thumb}">` : `<span class="card-icon">📐</span>`}
           <div class="card-body">
             <div class="card-title">${esc(a.name)}</div>
-            <div class="card-sub">${withPhotos.has(a.id) ? '✅ Com fotos' : '📸 Sem fotos'}</div>
+            <div class="card-sub">
+              ${withPhotos[a.id]?.hasDamage ? '<span style="color:var(--danger);font-weight:700">⚠️ Com Dano</span>' : 
+                withPhotos[a.id]?.hasPhotos ? '✅ Com fotos' : '📸 Sem fotos'}
+            </div>
           </div>
         </div>
         <button class="btn-icon" style="background:var(--danger); color:#fff; padding:8px; border-radius:6px; font-size:0.8rem; margin-left:8px;" onclick="removeSubareaFromGroup(${groupId}, ${a.id})">Remover</button>
@@ -826,29 +841,29 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
       <h1>${label}</h1>
       <a href="${photo.url}" download="${label}_${aircraftId}.jpg" class="btn-icon" style="font-size:1.4rem">📥</a>
     </div>
-    <div style="background:#000;width:100%;min-height:55vh;display:flex;align-items:center;justify-content:center;overflow:auto">
+    <div style="background:#000;width:100%;min-height:45vh;display:flex;align-items:center;justify-content:center;overflow:auto">
       <a href="${photo.url}" target="_blank" title="Clique para ver resolução original">
-        <img src="${photo.url}" style="max-width:100%; max-height:85vh; display:block; margin:auto">
+        <img src="${photo.url}" style="max-width:100%; max-height:60vh; display:block; margin:auto">
       </a>
     </div>
-    <div class="view" style="text-align:center">
-      <div style="margin-bottom:12px; font-size:1.1rem">${dmgStatus}</div>
+    <div class="view" style="text-align:center; padding-top:8px">
+      <div style="margin-bottom:8px; font-size:1.1rem">${dmgStatus}</div>
       
-      <div style="background:rgba(255,255,255,0.05); padding:16px; border-radius:12px; margin-bottom:20px; border:1px solid rgba(255,255,255,0.1)">
-        <div style="font-size:0.85rem; color:var(--muted); margin-bottom:12px">Alterar status da inspeção:</div>
-        <div style="display:flex; gap:12px; justify-content:center;">
+      <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:12px; margin-bottom:16px; border:1px solid rgba(255,255,255,0.1)">
+        <div style="font-size:0.8rem; color:var(--muted); margin-bottom:8px">Alterar status da inspeção:</div>
+        <div style="display:flex; gap:10px; justify-content:center;">
           <button class="btn ${photo.has_damage_check === 1 ? 'btn-primary' : 'btn-ghost'}" 
-                  style="flex:1; border-color:#00c853; color:${photo.has_damage_check === 1 ? '#fff' : '#00c853'}; background:${photo.has_damage_check === 1 ? '#00c853' : 'transparent'}; font-size:0.85rem" 
+                  style="flex:1; border-color:#00c853; color:${photo.has_damage_check === 1 ? '#fff' : '#00c853'}; background:${photo.has_damage_check === 1 ? '#00c853' : 'transparent'}; font-size:0.8rem; min-height:40px; padding:8px" 
                   onclick="updatePhotoCheck(1, event)">✅ Sem Dano</button>
           <button class="btn ${photo.has_damage_check === 2 ? 'btn-primary' : 'btn-ghost'}" 
-                  style="flex:1; border-color:#ff3333; color:${photo.has_damage_check === 2 ? '#fff' : '#ff3333'}; background:${photo.has_damage_check === 2 ? '#ff3333' : 'transparent'}; font-size:0.85rem" 
+                  style="flex:1; border-color:#ff3333; color:${photo.has_damage_check === 2 ? '#fff' : '#ff3333'}; background:${photo.has_damage_check === 2 ? '#ff3333' : 'transparent'}; font-size:0.8rem; min-height:40px; padding:8px" 
                   onclick="updatePhotoCheck(2, event)">⚠️ Com Dano</button>
         </div>
       </div>
 
-      <p style="color:var(--muted); font-size:0.82rem; margin-bottom:20px">${ts}</p>
+      <p style="color:var(--muted); font-size:0.8rem; margin-bottom:12px">${ts}</p>
       <button class="btn btn-primary" onclick="go('${retakeUrl}')"> 📷 Tirar novamente</button>
-      <p style="font-size:0.7rem; color:var(--muted); margin-top:12px">Dica: Toque na imagem para ver em resolução original.</p>
+      <p style="font-size:0.65rem; color:var(--muted); margin-top:8px">Dica: Toque na imagem para ver em resolução original.</p>
     </div>`;
 }
 
