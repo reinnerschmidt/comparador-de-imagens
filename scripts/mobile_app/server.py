@@ -978,7 +978,7 @@ def dashboard_stats():
         "by_global_area": by_global_area,
         "subareas": subareas
     })
-
+@app.route("/api/photos/upload", methods=["POST"])
 def upload_photo():
     """Recebe foto em base64, salva em disco e registra no banco."""
     data        = request.get_json(force=True)
