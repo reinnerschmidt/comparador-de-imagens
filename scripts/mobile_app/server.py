@@ -1196,8 +1196,8 @@ def save_feedback():
     if not analysis_id:
         return jsonify({"error": "analysis_id é obrigatório"}), 400
 
-    class_ok    = data.get("classification_correct")
-    location_ok = data.get("damage_location_correct")
+    class_ok    = bool(data.get("classification_correct"))
+    location_ok = bool(data.get("damage_location_correct"))
     region      = json.dumps(data.get("corrected_region")) if data.get("corrected_region") else None
     notes       = data.get("notes", "")
 
