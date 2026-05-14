@@ -79,7 +79,7 @@ function route() {
   if ((r = m(/^\/aircraft\/(\d+)\/area\/(\d+)\/(before|after)$/)))   return renderCapture(app, r[1], r[2], r[3], null);
   if ((r = m(/^\/analysis\/(\d+)$/)))         return renderAnalysisResult(app, r[1]);
   if ((r = m(/^\/feedback\/(\d+)$/)))          return renderFeedback(app, r[1]);
-  // Kotsu routes
+  if (h === '/kotsu/select')                                       return renderKotsuAircraftSelect(app);
   if ((r = m(/^\/kotsu\/(\d+)$/)))                                       return renderKotsuPosition(app, r[1]);
   if ((r = m(/^\/kotsu\/(\d+)\/pos\/([A-Z0-9]+)$/)))                    return renderKotsuAreaList(app, r[1], r[2]);
   if ((r = m(/^\/kotsu\/(\d+)\/pos\/([A-Z0-9]+)\/area\/(\d+)\/capture$/))) return renderKotsuCapture(app, r[1], r[2], r[3]);
@@ -117,68 +117,33 @@ async function renderHome(app) {
         </div>
       </div>
 
-      <!-- Ação Principal -->
-      <button class="btn btn-primary btn-hero" onclick="renderInspectionModeSelection(document.getElementById('app'))" style="margin-top:32px">
-        <span style="font-size:1.4rem">🛩️</span>
-        <div style="text-align:left">
-          <div style="font-size:1.1rem">Sistema de Inspeção</div>
-          <div style="font-size:0.75rem; font-weight:400; opacity:0.8">Iniciar nova verificação ou ver resultados</div>
-        </div>
-      </button>
+      <!-- Modos de Inspeção -->
+      <div class="section-label" style="margin-top:32px">Selecione o modo</div>
 
-      <button class="btn btn-ghost" style="margin-top:12px; width:100%; border:1px solid rgba(255,255,255,0.1); color:var(--text); height:64px; display:flex; align-items:center; justify-content:center; gap:12px; background:rgba(255,255,255,0.03)" onclick="toast('Selecione uma aeronave para registrar Kotsu', 'info')">
-        <img src="/static/kotsu-icon.png" style="width:40px; height:40px; object-fit:contain; border-radius:4px">
-        <span style="font-weight:600">Kotsu - Registrar Dano</span>
-      </button>
-
-      <div class="divider" style="margin:40px 0"></div>
-
-      <!-- Gestão Rápida -->
-      <div class="section-label">Gestão de Modelos e Áreas</div>
-      <div class="cards-grid" style="grid-template-columns: 1fr 1fr 1fr;">
-        <div class="card" onclick="go('/aircrafts')" style="flex-direction:column; padding:12px; text-align:center; gap:8px">
-          <img src="/static/embraer-e2.png" style="width:100%; height:28px; object-fit:contain">
-          <div class="card-title" style="font-size:0.7rem">Aeronaves</div>
-        </div>
-        <div class="card" onclick="go('/global-areas')" style="flex-direction:column; padding:12px; text-align:center; gap:8px">
-          <span style="font-size:1.4rem">📂</span>
-          <div class="card-title" style="font-size:0.7rem">Áreas Globais</div>
-        </div>
-        <div class="card" onclick="go('/models')" style="flex-direction:column; padding:12px; text-align:center; gap:8px">
-          <span style="font-size:1.4rem">📐</span>
-          <div class="card-title" style="font-size:0.7rem">Modelos</div>
-        </div>
-      </div>
-    </div>`;
-}
-
-async function renderInspectionModeSelection(app) {
-  app.innerHTML = `
-    <div class="app-header">
-      <button class="btn-icon" onclick="go('/')">‹</button>
-      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
-      <div class="header-logo-divider"></div>
-      <h1>Sistema de Inspeção</h1>
-    </div>
-    <div class="view">
-      <div class="section-label">Selecione a fase da inspeção</div>
-      
-      <button class="btn btn-primary action-card-big before" onclick="setPhaseAndGo('Recebimento')">
+      <button class="btn btn-primary action-card-big before" onclick="setPhaseAndGo('Recebimento')" style="margin-bottom:10px">
         <div class="ac-icon">📥</div>
         <div class="ac-label">Recebimento</div>
         <div class="ac-sub">Primeira verificação da aeronave</div>
       </button>
 
-      <button class="btn btn-primary action-card-big" style="background:#222; border:1px solid var(--border)" onclick="setPhaseAndGo('IFP')">
+      <button class="btn btn-primary action-card-big" style="background:#222; border:1px solid var(--border); margin-bottom:10px" onclick="setPhaseAndGo('IFP')">
         <div class="ac-icon">🔍</div>
         <div class="ac-label">IFP (Intermediária)</div>
         <div class="ac-sub">Inspeção durante o processo</div>
       </button>
 
-      <button class="btn btn-primary action-card-big after" onclick="setPhaseAndGo('IFF')">
+      <button class="btn btn-primary action-card-big after" style="margin-bottom:10px" onclick="setPhaseAndGo('IFF')">
         <div class="ac-icon">📤</div>
         <div class="ac-label">IFF (Final)</div>
         <div class="ac-sub">Verificação final antes da entrega</div>
+      </button>
+
+      <button class="btn btn-ghost" style="margin-top:2px; width:100%; border:1px solid rgba(255,60,60,0.3); color:var(--text); height:64px; display:flex; align-items:center; justify-content:center; gap:12px; background:rgba(255,40,40,0.06)" onclick="go('/kotsu/select')">
+        <img src="/static/kotsu-icon.png" style="width:40px; height:40px; object-fit:contain; border-radius:4px">
+        <div style="text-align:left">
+          <div style="font-weight:600">Kotsu - Registrar Dano</div>
+          <div style="font-size:0.7rem;opacity:0.7;color:#ff9999">Dano manual sem foto de referência</div>
+        </div>
       </button>
     </div>`;
 }
@@ -186,6 +151,52 @@ async function renderInspectionModeSelection(app) {
 function setPhaseAndGo(phase) {
   localStorage.setItem('insp_phase', phase);
   go('/aircrafts');
+}
+
+// Tela de seleção de aeronave para Kotsu
+async function renderKotsuAircraftSelect(app) {
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/')">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
+      <h1>Kotsu — Aeronave</h1>
+    </div>
+    <div class="view"><div class="spinner" style="padding:40px"></div></div>`;
+
+  const aircrafts = await API.get('/api/aircraft').catch(() => []);
+  const active = (aircrafts || []).filter(a => a.status !== 'Inativo');
+
+  app.innerHTML = `
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/')">‹</button>
+      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <div class="header-logo-divider"></div>
+      <h1>Kotsu — Aeronave</h1>
+    </div>
+    <div class="view">
+      <div style="background:rgba(255,50,50,0.08);border:1px solid rgba(255,60,60,0.25);border-radius:12px;padding:14px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
+        <img src="/static/kotsu-icon.png" style="width:36px;height:36px;object-fit:contain;border-radius:4px">
+        <div>
+          <div style="font-weight:700;color:#ff9999;font-size:0.9rem">Registro Kotsu</div>
+          <div style="font-size:0.75rem;color:var(--muted)">Selecione a aeronave para registrar o dano.</div>
+        </div>
+      </div>
+      ${active.length === 0
+        ? '<p style="color:var(--muted);text-align:center;padding:40px 0">Nenhuma aeronave ativa encontrada.</p>'
+        : `<div style="display:flex;flex-direction:column;gap:10px">
+            ${active.map(ac => `
+              <button class="card" style="display:flex;align-items:center;gap:12px;padding:16px;text-align:left;cursor:pointer;background:rgba(255,60,60,0.05);border:1px solid rgba(255,60,60,0.15)"
+                      onclick="go('/kotsu/${ac.id}')">
+                <img src="/static/embraer-e2.png" style="width:44px;height:24px;object-fit:contain">
+                <div style="flex:1">
+                  <div style="font-weight:700;font-size:1rem">${ac.serial}</div>
+                  <div style="font-size:0.7rem;color:var(--muted)">${ac.model || 'Aeronave'}</div>
+                </div>
+                <span style="color:#ff5555;font-size:1.2rem">›</span>
+              </button>`).join('')}
+          </div>`}
+    </div>`;
 }
 
 let aiChatHistory = [];
@@ -268,6 +279,25 @@ async function renderAircraftList(app) {
       <div class="section-label">Selecione a aeronave</div>
       <div id="home-aircraft" class="cards-grid"><div class="spinner"></div></div>
       <button class="btn btn-ghost" onclick="go('/aircraft/new')" style="margin-top:8px">+ Nova aeronave</button>
+
+      <div class="divider" style="margin:40px 0 20px 0"></div>
+      
+      <!-- Gestão Rápida -->
+      <div class="section-label">Gestão de Modelos e Áreas</div>
+      <div class="cards-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+        <div class="card" onclick="go('/aircrafts')" style="flex-direction:column; padding:12px; text-align:center; gap:8px">
+          <img src="/static/embraer-e2.png" style="width:100%; height:28px; object-fit:contain">
+          <div class="card-title" style="font-size:0.7rem">Aeronaves</div>
+        </div>
+        <div class="card" onclick="go('/global-areas')" style="flex-direction:column; padding:12px; text-align:center; gap:8px">
+          <span style="font-size:1.4rem">📂</span>
+          <div class="card-title" style="font-size:0.7rem">Áreas Globais</div>
+        </div>
+        <div class="card" onclick="go('/models')" style="flex-direction:column; padding:12px; text-align:center; gap:8px">
+          <span style="font-size:1.4rem">📐</span>
+          <div class="card-title" style="font-size:0.7rem">Modelos</div>
+        </div>
+      </div>
     </div>`;
 
   const aircraft = await API.get('/api/aircraft').catch(() => []);
