@@ -650,12 +650,17 @@ def get_area_history(aircraft_id: int, area_id: int):
     """Retorna fotos com dano confirmado para uma área em qualquer fase."""
     with db_conn() as conn:
         rows = fetchall(conn,
-            f"SELECT id, url, phase, captured_at, has_damage_check, manual_damage_regions "
+            f"SELECT id, file_path, phase, captured_at, has_damage_check, manual_damage_regions "
             f"FROM inspection_photos "
             f"WHERE aircraft_id={PH} AND area_id={PH} AND has_damage_check=2 "
             f"ORDER BY captured_at DESC",
             (aircraft_id, area_id)
         )
+        for r in rows:
+            r["url"] = f"/{r['file_path']}"
+            if r["manual_damage_regions"] and isinstance(r["manual_damage_regions"], str):
+                try: r["manual_damage_regions"] = json.loads(r["manual_damage_regions"])
+                except: r["manual_damage_regions"] = []
     return jsonify(rows)
 
 @app.route("/api/aircraft/<int:aircraft_id>/pos/<position>/areas", methods=["POST"])
