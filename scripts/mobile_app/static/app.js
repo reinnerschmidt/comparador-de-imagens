@@ -831,18 +831,18 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
   window._currentPhotoId = photo.id;
 
   const ts = fmtDate(photo.captured_at);
-  // Converte para número: a API pode retornar string ou int dependendo do adapter
+  // Converte para número para garantir comparação correta
   const check = Number(photo.has_damage_check ?? 0);
   const dmgStatus = check === 2 ? '<span style="color:#ff3333;font-weight:bold">⚠️ Dano Identificado</span>' :
                     check === 1 ? '<span style="color:#00c853;font-weight:bold">✅ Sem Dano</span>' :
                     '<span style="color:var(--muted)">Pendente</span>';
-  // Botões pré-construídos fora do template literal para evitar comparação de tipos
-  const btnSem = `<button class="btn ${check === 1 ? 'btn-primary' : 'btn-ghost'}"
-      style="flex:1; border-color:#00c853; color:${check === 1 ? '#fff' : '#00c853'}; background:${check === 1 ? '#00c853' : 'transparent'}; font-size:0.8rem; min-height:40px; padding:8px"
-      onclick="updatePhotoCheck(1, event)">✅ Sem Dano</button>`;
-  const btnCom = `<button class="btn ${check === 2 ? 'btn-primary' : 'btn-ghost'}"
-      style="flex:1; border-color:#ff3333; color:${check === 2 ? '#fff' : '#ff3333'}; background:${check === 2 ? '#ff3333' : 'transparent'}; font-size:0.8rem; min-height:40px; padding:8px"
-      onclick="updatePhotoCheck(2, event)">⚠️ Com Dano</button>`;
+  // Botão NÃO selecionado fica cinza/transparente, botão ATIVO fica colorido
+  const btnSem = `<button
+      style="flex:1; border:2px solid ${check === 1 ? '#00c853' : 'rgba(255,255,255,0.15)'}; color:${check === 1 ? '#fff' : 'rgba(255,255,255,0.4)'}; background:${check === 1 ? '#00c853' : 'transparent'}; font-size:0.85rem; min-height:44px; padding:8px; border-radius:12px; cursor:pointer"
+      onclick="updatePhotoCheck(1, event)">${check === 1 ? '✅ Sem Dano' : 'Sem Dano'}</button>`;
+  const btnCom = `<button
+      style="flex:1; border:2px solid ${check === 2 ? '#ff3333' : 'rgba(255,255,255,0.15)'}; color:${check === 2 ? '#fff' : 'rgba(255,255,255,0.4)'}; background:${check === 2 ? '#ff3333' : 'transparent'}; font-size:0.85rem; min-height:44px; padding:8px; border-radius:12px; cursor:pointer"
+      onclick="updatePhotoCheck(2, event)">${check === 2 ? '⚠️ Com Dano' : 'Com Dano'}</button>`;
 
   app.innerHTML = `
     <div class="app-header">
