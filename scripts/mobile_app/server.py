@@ -724,14 +724,14 @@ def list_photos(aircraft_id: int, area_id: int):
         if position:
             rows = fetchall(
                 conn,
-                f"SELECT id, mode, file_path, captured_at, has_manual_damage, manual_damage_regions FROM inspection_photos "
+                f"SELECT id, mode, file_path, captured_at, has_manual_damage, has_damage_check, manual_damage_regions FROM inspection_photos "
                 f"WHERE aircraft_id={PH} AND area_id={PH} AND position={PH} AND phase={PH} ORDER BY captured_at DESC",
                 (aircraft_id, area_id, position.upper(), phase),
             )
         else:
             rows = fetchall(
                 conn,
-                f"SELECT id, mode, file_path, captured_at, has_manual_damage, manual_damage_regions FROM inspection_photos "
+                f"SELECT id, mode, file_path, captured_at, has_manual_damage, has_damage_check, manual_damage_regions FROM inspection_photos "
                 f"WHERE aircraft_id={PH} AND area_id={PH} AND position IS NULL AND phase={PH} ORDER BY captured_at DESC",
                 (aircraft_id, area_id, phase),
             )

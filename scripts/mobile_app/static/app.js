@@ -796,10 +796,10 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
         <div style="display:flex; gap:12px; justify-content:center;">
           <button class="btn ${photo.has_damage_check === 1 ? 'btn-primary' : 'btn-ghost'}" 
                   style="flex:1; border-color:#00c853; color:${photo.has_damage_check === 1 ? '#fff' : '#00c853'}; background:${photo.has_damage_check === 1 ? '#00c853' : 'transparent'}; font-size:0.85rem" 
-                  onclick="updatePhotoCheck(1)">✅ Sem Dano</button>
+                  onclick="updatePhotoCheck(1, event)">✅ Sem Dano</button>
           <button class="btn ${photo.has_damage_check === 2 ? 'btn-primary' : 'btn-ghost'}" 
                   style="flex:1; border-color:#ff3333; color:${photo.has_damage_check === 2 ? '#fff' : '#ff3333'}; background:${photo.has_damage_check === 2 ? '#ff3333' : 'transparent'}; font-size:0.85rem" 
-                  onclick="updatePhotoCheck(2)">⚠️ Com Dano</button>
+                  onclick="updatePhotoCheck(2, event)">⚠️ Com Dano</button>
         </div>
       </div>
 
@@ -809,14 +809,15 @@ async function renderPhotoViewer(app, aircraftId, areaId, mode, position) {
     </div>`;
 }
 
-async function updatePhotoCheck(status) {
+async function updatePhotoCheck(status, event) {
   const photoId = window._currentPhotoId;
   if (!photoId) return;
   try {
-    const btn = event.currentTarget;
-    const oldText = btn.innerHTML;
-    btn.innerHTML = '⏳';
-    btn.disabled = true;
+    const btn = event ? event.currentTarget : null;
+    if (btn) {
+      btn.innerHTML = '⏳';
+      btn.disabled = true;
+    }
 
     await API.post(`/api/photos/${photoId}/check`, { status });
     toast('Status atualizado!', 'ok');
