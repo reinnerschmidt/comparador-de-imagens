@@ -2160,6 +2160,7 @@ async function renderKotsuAreaList(app, aircraftId, position) {
         ${(areas || []).map(a => {
           const list = kotsuByArea[a.id] || [];
           const badge = list.length ? `<span style="background:#ff3333;color:#fff;font-size:0.7rem;padding:2px 8px;border-radius:20px;font-weight:700">🔴 ${list.length} Kotsu</span>` : '';
+          const histBadge = a.has_historical_damage ? `<span style="background:#f2a154;color:#fff;font-size:0.7rem;padding:2px 8px;border-radius:20px;font-weight:700">📍 Histórico</span>` : '';
           const isK = !!a.is_kotsu_only;
           const controls = isK ? `
             <div style="display:flex; gap:10px; margin-right:5px">
@@ -2174,6 +2175,7 @@ async function renderKotsuAreaList(app, aircraftId, position) {
             <div style="display:flex;align-items:center;gap:10px;margin-bottom:${list.length ? '10px' : '0'}">
               <span style="flex:1;font-weight:600">${a.name}</span>
               ${controls}
+              ${histBadge}
               ${badge}
               <button class="btn btn-primary" style="font-size:0.75rem;padding:6px 14px;min-height:34px;background:#ff3333;border-color:#ff3333"
                       onclick="go('/kotsu/${aircraftId}/pos/${position}/area/${a.id}/capture')">+ Registrar</button>

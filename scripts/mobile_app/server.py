@@ -686,16 +686,29 @@ def get_position_areas(aircraft_id: int):
     position = request.args.get("position")
     if not position: return jsonify({"error": "position obrigatória"}), 400
     
+    val_true = "TRUE" if DB_URL else "1"
+    val_false = "FALSE" if DB_URL else "0"
+    
     with db_conn() as conn:
+        # Puxa áreas que:
+        # 1. Estão em qualquer modelo global (Standard)
+        # 2. OU foram ativadas especificamente para esta aeronave/pos (Kotsu custom)
         sql = f"""
-            SELECT DISTINCT a.id, a.name, a.is_kotsu_only 
+            SELECT DISTINCT a.id, a.name, a.is_kotsu_only,
+                   EXISTS(
+                       SELECT 1 FROM inspection_photos ip 
+                       WHERE ip.aircraft_id={PH} AND ip.area_id=a.id AND ip.has_damage_check=2
+                   ) as has_historical_damage
             FROM areas a
             JOIN global_area_subareas gas ON a.id = gas.subarea_id
-            JOIN position_areas pa ON gas.global_area_id = pa.global_area_id
-            WHERE pa.aircraft_id = {PH} AND pa.position = {PH}
+            LEFT JOIN position_areas pa ON gas.global_area_id = pa.global_area_id
+            WHERE 
+                (a.is_kotsu_only IS NULL OR a.is_kotsu_only = {val_false})
+                OR
+                (a.is_kotsu_only = {val_true} AND pa.aircraft_id = {PH} AND pa.position = {PH})
             ORDER BY a.name
         """
-        rows = fetchall(conn, sql, (aircraft_id, position.upper()))
+        rows = fetchall(conn, sql, (aircraft_id, aircraft_id, position.upper()))
     return jsonify(rows)
 
 
