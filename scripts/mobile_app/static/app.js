@@ -119,6 +119,10 @@ async function renderHome(app) {
         </div>
       </button>
 
+      <button class="btn btn-ghost" style="margin-top:12px; width:100%; border:1px dashed rgba(255,255,255,0.2); color:var(--muted); height:48px" onclick="toast('Configuração pendente', 'info')">
+        🚧 Kotsu - Não Gerar
+      </button>
+
       <div class="divider" style="margin:40px 0"></div>
 
       <!-- Gestão Rápida -->
