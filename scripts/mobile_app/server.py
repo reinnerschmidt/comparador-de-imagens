@@ -817,12 +817,12 @@ def dashboard_stats():
     params = (aircraft_id,) if aircraft_id else ()
 
     with db_conn() as conn:
-        # Total damages (unique areas with confirmed damage)
-        sql_total = f"SELECT COUNT(DISTINCT p.area_id) as count FROM inspection_photos p WHERE p.has_damage_check = 2 {where_p}"
+        # Total damages (unique events: aircraft + area)
+        sql_total = f"SELECT COUNT(DISTINCT p.aircraft_id || '-' || p.area_id) as count FROM inspection_photos p WHERE p.has_damage_check = 2 {where_p}"
         total_damage = fetchone(conn, sql_total, params)["count"]
         
-        # Damage by phase (unique areas per phase)
-        sql_phase = f"SELECT p.phase as label, COUNT(DISTINCT p.area_id) as count FROM inspection_photos p WHERE p.has_damage_check = 2 {where_p} GROUP BY p.phase"
+        # Damage by phase (unique events per phase)
+        sql_phase = f"SELECT p.phase as label, COUNT(DISTINCT p.aircraft_id || '-' || p.area_id) as count FROM inspection_photos p WHERE p.has_damage_check = 2 {where_p} GROUP BY p.phase"
         by_phase = fetchall(conn, sql_phase, params)
         
         # Damage by aircraft (unique areas per aircraft)
@@ -834,9 +834,9 @@ def dashboard_stats():
             ORDER BY count DESC
         """)
         
-        # Damage by Area (Global Areas)
+        # Damage by Area (Global Areas - unique events per global area)
         sql_areas = f"""
-            SELECT ga.id, ga.name as label, COUNT(DISTINCT p.area_id) as count 
+            SELECT ga.id, ga.name as label, COUNT(DISTINCT p.aircraft_id || '-' || p.area_id) as count 
             FROM global_areas ga
             JOIN global_area_subareas gas ON ga.id = gas.global_area_id
             JOIN inspection_photos p ON gas.subarea_id = p.area_id AND p.has_damage_check = 2 {where_p}
@@ -845,9 +845,9 @@ def dashboard_stats():
         """
         by_global_area = fetchall(conn, sql_areas, params)
         
-        # Sub-area details
+        # Sub-area details (unique events per sub-area)
         sql_sub = f"""
-            SELECT gas.global_area_id, a.name as label, COUNT(DISTINCT p.id) as count 
+            SELECT gas.global_area_id, a.name as label, COUNT(DISTINCT p.aircraft_id || '-' || p.area_id) as count 
             FROM global_areas ga
             JOIN global_area_subareas gas ON ga.id = gas.global_area_id
             JOIN areas a ON gas.subarea_id = a.id
