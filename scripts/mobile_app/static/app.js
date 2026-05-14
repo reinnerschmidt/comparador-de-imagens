@@ -289,8 +289,6 @@ async function renderAircraftList(app) {
         <span style="color:var(--muted);font-size:1.2rem">›</span>
       </div>`).join('');
   }
-
-  }
 }
 
 async function renderGlobalAreaList(app) {
