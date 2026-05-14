@@ -156,10 +156,11 @@ function setPhaseAndGo(phase) {
 async function renderKotsuAircraftSelect(app) {
   app.innerHTML = `
     <div class="app-header">
-      <button class="btn-icon" onclick="go('/')">‹</button>
-      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <button class="btn-icon" onclick="go('/')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
       <div class="header-logo-divider"></div>
       <h1>Kotsu — Aeronave</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
     </div>
     <div class="view"><div class="spinner" style="padding:40px"></div></div>`;
 
@@ -168,10 +169,11 @@ async function renderKotsuAircraftSelect(app) {
 
   app.innerHTML = `
     <div class="app-header">
-      <button class="btn-icon" onclick="go('/')">‹</button>
-      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <button class="btn-icon" onclick="go('/')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
       <div class="header-logo-divider"></div>
       <h1>Kotsu — Aeronave</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
     </div>
     <div class="view">
       <div style="background:rgba(255,50,50,0.08);border:1px solid rgba(255,60,60,0.25);border-radius:12px;padding:14px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
@@ -267,12 +269,11 @@ async function renderAircraftList(app) {
   const phase = getPhase();
   app.innerHTML = `
     <div class="app-header">
-      <button class="btn-icon" onclick="go('/')">‹</button>
-      <a class="header-logo" href="#/">
-        <img src="/static/embraer-logo.svg" alt="Embraer">
-      </a>
+      <button class="btn-icon" onclick="go('/')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
       <div class="header-logo-divider"></div>
       <h1 style="font-size:1.1rem">${phase}</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
     </div>
     <div class="view">
       <div class="section-label">Selecione a aeronave</div>
@@ -530,8 +531,8 @@ const POSITIONS = ['P4', 'P3', 'P2', 'P1', 'P0', 'F30'];
 async function renderAircraftDetail(app, id) {
   app.innerHTML = `
     <div class="app-header">
-      <button class="btn-icon" onclick="go('/')">‹</button>
-      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <button class="btn-icon" onclick="go('/aircrafts')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
       <div class="header-logo-divider"></div>
       <h1 id="ac-title">…</h1>
       <div id="ac-status-badge" style="margin-left:12px; cursor:pointer"></div>
@@ -609,10 +610,11 @@ async function renderPositionDetail(app, aircraftId, position) {
   const aircraft = await API.get('/api/aircraft').then(l => l.find(a => a.id == aircraftId) || {});
   app.innerHTML = `
     <div class="app-header">
-      <button class="btn-icon" onclick="go('/aircraft/${aircraftId}')">‹</button>
-      <a class="header-logo" href="#/"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+      <button class="btn-icon" onclick="go('/aircraft/${aircraftId}')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
       <div class="header-logo-divider"></div>
       <h1>${esc(aircraft.serial)} | ${position}</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
     </div>
     <div class="view" style="padding-bottom: 80px">
       <div class="section-label" style="display:flex; justify-content:space-between; align-items:center">
@@ -1037,8 +1039,11 @@ async function renderAreaDetail(app, templateId, aircraftId, position) {
 
   app.innerHTML = `
     <div class="app-header">
-      <button class="btn-icon" onclick="go('${backUrl}')">‹</button>
+      <button class="btn-icon" onclick="go('${backUrl}')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
+      <div class="header-logo-divider"></div>
       <h1>${esc(ac.serial)}${position ? ' | '+position : ''}</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
     </div>
     <div class="view">
       <div class="section-label">Padrão Global: ${esc(data.name)}</div>
@@ -1833,8 +1838,11 @@ function esc(str) {
 async function renderAnalysisResult(app, analysisId) {
   app.innerHTML = `
     <div class="app-header">
-      <button class="btn-icon" onclick="history.back()">‹</button>
+      <button class="btn-icon" onclick="history.back()" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
+      <div class="header-logo-divider"></div>
       <h1>Resultado da Análise</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
     </div>
     <div class="view"><div class="spinner"></div></div>`;
 
@@ -1882,8 +1890,11 @@ async function renderAnalysisResult(app, analysisId) {
 async function renderFeedback(app, analysisId) {
   app.innerHTML = `
     <div class="app-header">
-      <button class="btn-icon" onclick="history.back()">‹</button>
+      <button class="btn-icon" onclick="history.back()" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
+      <div class="header-logo-divider"></div>
       <h1>Avaliar Análise</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
     </div>
     <div class="view"><div class="spinner" style="padding:40px"></div></div>`;
 
@@ -1897,8 +1908,11 @@ async function renderFeedback(app, analysisId) {
 
   app.innerHTML = `
     <div class="app-header">
-      <button class="btn-icon" onclick="history.back()">‹</button>
+      <button class="btn-icon" onclick="history.back()" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
+      <div class="header-logo-divider"></div>
       <h1>Avaliar Análise</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
     </div>
     <div class="view">
       <p style="color:var(--muted);font-size:0.9rem;margin-bottom:20px">
@@ -2058,7 +2072,13 @@ async function renderKotsuPosition(app, aircraftId) {
   const ac = await API.get(`/api/aircraft/${aircraftId}/stats`).catch(() => ({}));
   const positions = Object.keys(ac).filter(k => k !== 'aircraft_id');
   app.innerHTML = `
-    <div class="app-header"><button class="btn-icon" onclick="go('/aircraft/${aircraftId}')">‹</button><h1>Kotsu — Posição</h1></div>
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/kotsu/select')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
+      <div class="header-logo-divider"></div>
+      <h1>Kotsu — Posição</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+    </div>
     <div class="view">
       <p style="color:var(--muted);font-size:0.8rem;margin-bottom:16px">Selecione a posição onde o dano Kotsu ocorreu.</p>
       <div style="display:flex;flex-direction:column;gap:10px">
@@ -2081,7 +2101,13 @@ async function renderKotsuAreaList(app, aircraftId, position) {
   const kotsuByArea = {};
   (kotsuList || []).forEach(k => { if (!kotsuByArea[k.area_id]) kotsuByArea[k.area_id] = []; kotsuByArea[k.area_id].push(k); });
   app.innerHTML = `
-    <div class="app-header"><button class="btn-icon" onclick="go('/kotsu/${aircraftId}')">‹</button><h1>Kotsu — ${position}</h1></div>
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/kotsu/${aircraftId}')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
+      <div class="header-logo-divider"></div>
+      <h1>Kotsu — ${position}</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+    </div>
     <div class="view">
       <p style="color:var(--muted);font-size:0.8rem;margin-bottom:16px">Selecione a área afetada.</p>
       <div style="display:flex;flex-direction:column;gap:10px">
@@ -2111,7 +2137,13 @@ let _kotsuStream = null, _kotsuDataUrl = null;
 function renderKotsuCapture(app, aircraftId, position, areaId) {
   _kotsuDataUrl = null;
   app.innerHTML = `
-    <div class="app-header"><button class="btn-icon" onclick="go('/kotsu/${aircraftId}/pos/${position}')">‹</button><h1>Kotsu — Foto</h1></div>
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('/kotsu/${aircraftId}/pos/${position}')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
+      <div class="header-logo-divider"></div>
+      <h1>Kotsu — Foto</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+    </div>
     <div style="background:#000;width:100%;height:55vh;display:flex;align-items:center;justify-content:center">
       <video id="kotsu-video" autoplay playsinline style="width:100%;height:100%;object-fit:cover"></video>
     </div>
@@ -2242,7 +2274,13 @@ async function renderKotsuView(app, aircraftId, position, areaId, photoId) {
   const photo = (list || []).find(k => String(k.id) === String(photoId));
   if (!photo) { go(backUrl); return; }
   app.innerHTML = `
-    <div class="app-header"><button class="btn-icon" onclick="go('${backUrl}')">‹</button><h1>Kotsu — Detalhe</h1></div>
+    <div class="app-header">
+      <button class="btn-icon" onclick="go('${backUrl}')" title="Voltar">‹</button>
+      <button class="btn-icon" onclick="go('/')" title="Início">🏠</button>
+      <div class="header-logo-divider"></div>
+      <h1>Kotsu — Detalhe</h1>
+      <a class="header-logo" href="#/" style="margin-left:auto"><img src="/static/embraer-logo.svg" alt="Embraer"></a>
+    </div>
     <div style="background:#000;width:100%;min-height:45vh;display:flex;align-items:center;justify-content:center;overflow:hidden">
       <canvas id="kotsu-view-canvas" style="max-width:100%;max-height:60vh;display:block;cursor:pointer" onclick="window.open('${photo.url}','_blank')"></canvas>
     </div>
