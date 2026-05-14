@@ -1245,18 +1245,22 @@ def ai_query():
     db_engine = "PostgreSQL" if IS_POSTGRES else "SQLite"
 
     schema_prompt = f"""
-    Você é um analista de dados especialista em inspeção de aeronaves.
+    Você é um analista de dados especialista em inspeção de aeronaves AeroInspect.
     O banco de dados ({db_engine}) tem o seguinte esquema:
     {current_schema}
 
-    Instruções:
-    - O usuário fará uma pergunta sobre os dados de inspeção.
-    - Gere APENAS uma query SQL 'SELECT' válida para responder à pergunta.
-    - Não use comandos como DELETE, DROP, UPDATE ou INSERT.
-    - Retorne apenas o código SQL, sem explicações ou markdown.
-    - MUITO IMPORTANTE ({db_engine}): No Postgres, booleanos são TRUE/FALSE e inteiros são números. 
-      Certifique-se de que comparações como 'has_manual_damage = TRUE' ou 'has_damage_check = 2' estejam corretas para os tipos definidos no esquema.
-    - Se a pergunta não puder ser respondida com os dados, retorne 'ERROR: Não consigo responder isso.'.
+    Instruções para geração de SQL:
+    1. O usuário fará perguntas sobre inspeções, danos e fotos.
+    2. CONCEITO DE DANO:
+       - Um "Dano Manual" é identificado quando `inspection_photos.has_damage_check = 2`.
+       - Um "Dano por IA" é identificado quando `analyses.status = 'Dano Detectado'`.
+       - `has_damage_check = 0` significa "Pendente" (não avaliado).
+       - `has_damage_check = 1` significa "Sem Dano".
+    3. Para responder sobre danos em um avião, verifique SEMPRE as duas tabelas (`inspection_photos` e `analyses`).
+    4. Use JOIN com a tabela `areas` para obter o nome da região (`areas.name`) e com `aircraft` para filtrar pelo `serial`.
+    5. Se o usuário pedir fotos, certifique-se de incluir `file_path` (ou `heatmap_path`) na query.
+    6. Gere APENAS uma query SQL 'SELECT' válida. Não retorne markdown, apenas o texto da query.
+    7. No Postgres, booleanos são TRUE/FALSE. No SQLite, use 1/0.
 
     Pergunta do usuário: {question}
     SQL:"""
@@ -1314,16 +1318,20 @@ def ai_query():
 
         # 3. Formatar a resposta final em texto
         format_prompt = f"""
-        Você é um assistente de inspeção. Responda à pergunta do usuário baseando-se nos dados do banco.
+        Você é o AeroInspect Intelligence, um assistente técnico de inspeção de aeronaves.
+        Responda à pergunta do usuário baseando-se EXCLUSIVAMENTE nos dados fornecidos do banco de dados.
+
         Pergunta: "{question}"
-        Dados encontrados: {results}
+        Dados encontrados (JSON): {results}
         
-        IMPORTANTE: 
-        1. Se houver caminhos de arquivo (file_path, heatmap_path) nos dados, você DEVE incluí-los na resposta como URLs completas começando com '/' e SEMPRE entre aspas duplas.
-           Exemplo: Se o dado for 'data/inspections/img.jpg', escreva "/data/inspections/img.jpg".
-        2. O frontend irá detectar o padrão "/data/..." e renderizar a imagem.
-        3. Escreva uma resposta curta e profissional.
-        4. No final, SEMPRE adicione a frase: "Você deseja que eu gere um gráfico sobre?"
+        DIRETRIZES DE RESPOSTA:
+        1. Se os dados mostram danos (`has_damage_check = 2` ou status 'Dano Detectado'), liste-os claramente por posição e região.
+        2. Se o usuário pediu imagens e os dados contêm `file_path` ou `heatmap_path`, você DEVE incluí-las.
+        3. Para cada imagem, use a URL começando com '/' (ex: "/data/inspections/...") e coloque-a entre aspas duplas em uma nova linha.
+        4. O sistema irá renderizar automaticamente qualquer string que comece com "/data/".
+        5. Se não houver dados, diga que não encontrou registros para os critérios informados.
+        6. Mantenha um tom profissional, técnico e direto.
+        7. No final, adicione: "Você deseja que eu gere um gráfico sobre?"
         """
         
         try:
